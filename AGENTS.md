@@ -84,7 +84,8 @@ Everything in this directory has been fully replaced by Rust equivalents. It is 
 - **`mediafusion-api`** (Rust, Axum): HTTP server on port 8001. Handles Stremio addon manifest, catalog, stream, and user profile endpoints.
 - **`mediafusion-worker`** (Rust): Long-running background job processor. Scrapes Prowlarr, RSS feeds, Telegram, YouTube, etc. Runs scheduled jobs.
 - **PostgreSQL**: Primary data store. Migrations live in `backend/migrations/` as `NNNN_description.{up|down}.sql` and are applied automatically on startup via sqlx.
-- **Redis**: Session cache, rate limiting, stream cache, job queue coordination.
+- **Redis**: Session cache, rate limiting, stream cache, job queue coordination. TRAWL (when deployed) uses Redis database `1` on the same instance; MediaFusion uses database `0`.
+- **TRAWL** *(optional, Docker Compose)*: Browser pool for Cloudflare/JS challenge bypass. FlareSolverr-compatible API at `/v1`. Required for ext.to, sport-video, and CF-protected public indexers.
 - **Frontend** (`clients/frontend`): React 19 config UI. Built with Vite, TailwindCSS 4, Radix UI, React Query.
 - **Kodi addon** (`clients/kodi`): Python-based Kodi client.
 

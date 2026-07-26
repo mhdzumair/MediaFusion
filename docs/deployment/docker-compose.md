@@ -159,6 +159,33 @@ Now open [https://mediafusion.local](https://mediafusion.local) in your browser.
 
 ---
 
+## TRAWL (optional — Cloudflare / JS challenge bypass)
+
+Several background scrapers need a real browser to bypass Cloudflare or site-specific JS challenges:
+
+- **ext.to** spiders (`spider_movies_tv_ext`, `spider_ufc_ext`, etc.)
+- **sport-video.org.ua** (`spider_sport_video`)
+- **Public indexers** behind Cloudflare (1337x, TPB, etc.) during `spider_registry_crawl`
+- **Reddit RSS** fallback in formula feeds
+
+The full `docker-compose.yml` stack includes [TRAWL](https://github.com/germondai/trawl) automatically. It speaks the FlareSolverr `/v1` API and is configured via `TRAWL_URL=http://trawl:8191` on the worker.
+
+TRAWL stores its session cache in **Redis database 1** on the shared `redis` service (MediaFusion uses database 0). No separate Redis container is needed.
+
+!!! note "Live search"
+    TRAWL is **not** invoked during live `/stream/` API requests — only background worker jobs use it. This avoids CPU spikes on user-facing requests.
+
+To verify TRAWL is healthy:
+
+```bash
+curl http://localhost:8191/health   # if port is published
+docker compose logs trawl --tail 50
+```
+
+For local native dev (without the full stack), run TRAWL separately and set `TRAWL_URL=http://127.0.0.1:8191` in your root `.env`. See [Local Development](local-dev.md#optional-trawl-for-cloudflare-scrapers).
+
+---
+
 ## Updating MediaFusion
 
 ```bash
@@ -197,3 +224,5 @@ docker compose -f docker-compose.yml logs -f postgres
 | "Connection refused" | Stack not started, or `HOST_URL` mismatch |
 | Empty catalogs | Scrapers haven't run yet — trigger manually at `/scraper` |
 | Database connection errors | `POSTGRES_URI` not set correctly in `.env` |
+| ext.to / sport-video spiders produce no streams | `TRAWL_URL` not set or TRAWL container unhealthy — check `docker compose logs trawl` |
+| CF indexers skipped in registry crawl | Same as above — public indexers with `solve_cloudflare` require TRAWL |

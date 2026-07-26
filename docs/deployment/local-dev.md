@@ -92,6 +92,35 @@ In a separate terminal from the project root:
 cargo run --manifest-path backend/Cargo.toml --bin mediafusion-worker
 ```
 
+### Optional: TRAWL for Cloudflare scrapers
+
+The minimal dev stack (`docker-compose-minimal.yml`) does not include TRAWL. Scrapers for ext.to, sport-video, and CF-protected public indexers need it.
+
+Run TRAWL against the dev Redis (database 1):
+
+```bash
+docker run -d --name trawl --network host --shm-size=1g \
+  -e REDIS_URL=redis://127.0.0.1:6379/1 \
+  -e BROWSER_POOL_SIZE=2 \
+  -p 8191:8191 \
+  ghcr.io/germondai/trawl:latest
+```
+
+Add to your root `.env`:
+
+```bash
+TRAWL_URL=http://127.0.0.1:8191
+```
+
+Test a single ext.to page scrape:
+
+```bash
+cargo run --manifest-path backend/Cargo.toml --bin mediafusion-worker \
+  -- --run-job spider_movies_tv_ext --args '{"total_pages": 1}'
+```
+
+See [Worker CLI Reference](worker-cli.md) for all job names.
+
 ---
 
 ## Useful tips

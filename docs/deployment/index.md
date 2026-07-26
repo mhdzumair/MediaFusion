@@ -29,7 +29,7 @@ Every MediaFusion deployment consists of these components:
 | **PostgreSQL** | Primary database — metadata, stream index |
 | **Redis** | Cache, task queue, rate limiting |
 | **Prowlarr** *(optional)* | Torrent indexer aggregator |
-| **Browserless** *(optional)* | Headless Chrome for scraping Cloudflare-protected sites |
+| **TRAWL** *(optional)* | Browser pool for Cloudflare/JS challenge bypass ([FlareSolverr-compatible API](https://github.com/germondai/trawl)). Required for ext.to, sport-video, and CF-protected public indexers. Shares the Redis instance on database `1`. |
 
 ## Database migrations
 

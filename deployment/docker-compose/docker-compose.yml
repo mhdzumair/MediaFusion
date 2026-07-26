@@ -37,17 +37,14 @@ services:
     environment:
       - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
       - REDIS_URL=redis://redis:6379
-      - BROWSERLESS_URL=http://browserless:3000
-      - BYPARR_URL=http://byparr:8191
+      - TRAWL_URL=http://trawl:8191
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      browserless:
-        condition: service_started
-      byparr:
-        condition: service_started
+      trawl:
+        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -173,29 +170,23 @@ services:
     networks:
       - mediafusion-network
 
-  # ── Browserless v2 (Chrome automation for JS-challenge sites) ────────────
-  browserless:
-    image: ghcr.io/browserless/chromium:latest
+  # ── TRAWL (FlareSolverr-compatible CF bypass for public indexers) ───────
+  trawl:
+    image: ghcr.io/germondai/trawl:latest
+    shm_size: 1gb
     environment:
-      - CONCURRENT=4
-      - TIMEOUT=120000
-      - ENABLE_CORS=true
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - mediafusion-network
-
-  # ── Byparr (FlareSolverr-compatible CF bypass for public indexers) ────────
-  byparr:
-    image: ghcr.io/thephaseless/byparr:latest
-    environment:
-      - LOG_LEVEL=info
+      # DB 1 — MediaFusion uses the default DB 0 on the shared redis service.
+      - REDIS_URL=redis://redis:6379/1
+      - BROWSER_POOL_SIZE=3
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     logging:
       driver: "json-file"

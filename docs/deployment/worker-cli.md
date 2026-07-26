@@ -116,6 +116,9 @@ Run `--list-jobs` to get the live list. The table below describes each queue.
 | `youtube_bg` | Scrape YouTube channels |
 | `telegram_bg` | Scrape configured Telegram channels |
 
+!!! note "TRAWL-dependent spiders"
+    `spider_movies_tv_ext`, `spider_formula_ext`, `spider_motogp_ext`, `spider_wwe_ext`, `spider_ufc_ext`, `spider_sport_video`, and CF entries in `spider_registry_crawl` require `TRAWL_URL` to be set. See [TRAWL setup](../deployment/docker-compose.md#trawl-optional-cloudflare--js-challenge-bypass).
+
 ### Feed scrapers
 
 | Queue | Description |

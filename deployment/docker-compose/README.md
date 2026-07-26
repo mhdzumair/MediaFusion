@@ -35,6 +35,12 @@ MediaFusion uses PostgreSQL as the primary database.
 | `docker-compose-minimal.yml` | Minimal setup (databases only) for development |
 | `docker-compose-postgres-ha.yml` | PostgreSQL High Availability with read replicas |
 
+### TRAWL (Cloudflare / JS challenge bypass)
+
+The full stack (`docker-compose.yml`) includes [TRAWL](https://github.com/germondai/trawl) for background scrapers that need a real browser (ext.to, sport-video, CF-protected public indexers). Configure via `TRAWL_URL=http://trawl:8191` — already set on the worker service.
+
+TRAWL shares the MediaFusion Redis instance on **database 1** (MediaFusion uses database 0). See [Docker Compose deployment docs](/docs/deployment/docker-compose.md#trawl-optional-cloudflare--js-challenge-bypass) for details.
+
 ## Configuration 📝
 
 Rename `.env-sample` to `.env` and update the variables.

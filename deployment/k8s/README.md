@@ -25,8 +25,10 @@ MediaFusion uses PostgreSQL as the primary database:
 
 | File | Description |
 |------|-------------|
-| `local-deployment.yaml` | Standard deployment with single PostgreSQL |
+| `local-deployment.yaml` | Standard deployment with single PostgreSQL and TRAWL |
 | `postgres-ha-deployment.yaml` | PostgreSQL HA with primary and read replicas |
+
+TRAWL (browser pool for Cloudflare bypass) is included in `local-deployment.yaml`. It uses Redis database `1` on the shared `redis-service`. Workers reference it via `TRAWL_URL=http://trawl-service:8191`.
 
 For production, consider using managed PostgreSQL services (AWS RDS, CloudSQL, etc.) or Kubernetes operators like CloudNative-PG.
 

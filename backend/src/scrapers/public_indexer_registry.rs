@@ -34,7 +34,7 @@ pub struct IndexerDef {
     pub supports_movie: bool,
     pub supports_series: bool,
     pub supports_anime: bool,
-    /// When true this indexer is behind Cloudflare and needs Byparr to work reliably.
+    /// When true this indexer is behind Cloudflare and needs TRAWL to work reliably.
     pub solve_cloudflare: bool,
     /// When true a plain HTTP fetch is attempted even if CF bypass is unavailable.
     pub http_fallback: bool,
@@ -578,11 +578,11 @@ pub static ALL_INDEXERS: &[IndexerDef] = &[
 ];
 
 /// Return the subset of indexers relevant for a given media type, filtered by
-/// enabled-sites list and Byparr availability.
+/// enabled-sites list and TRAWL availability.
 pub fn get_indexers_for_media(
     media_type: &str,
     enabled_sites: Option<&str>,
-    byparr_available: bool,
+    trawl_available: bool,
 ) -> Vec<&'static IndexerDef> {
     let enabled_set: Option<std::collections::HashSet<&str>> = enabled_sites.map(|s| {
         s.split(',')
@@ -592,7 +592,7 @@ pub fn get_indexers_for_media(
     });
 
     // Non-CF indexers first so cheap scrapes consume the budget before any
-    // Chromium/byparr session is launched. CF indexers run only if budget remains.
+    // Chromium/TRAWL session is launched. CF indexers run only if budget remains.
     let mut indexers: Vec<&'static IndexerDef> = ALL_INDEXERS
         .iter()
         .filter(|def| {
@@ -610,14 +610,14 @@ pub fn get_indexers_for_media(
             {
                 return false;
             }
-            // Skip CF indexers when Byparr is unavailable (worker-only)
-            if def.solve_cloudflare && !byparr_available {
+            // Skip CF indexers when TRAWL is unavailable (worker-only)
+            if def.solve_cloudflare && !trawl_available {
                 return false;
             }
             true
         })
         .collect();
-    // Stable sort: non-CF first, CF (byparr) last.
+    // Stable sort: non-CF first, CF (TRAWL) last.
     indexers.sort_by_key(|def| def.solve_cloudflare);
     indexers
 }

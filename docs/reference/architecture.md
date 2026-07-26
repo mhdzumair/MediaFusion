@@ -52,6 +52,14 @@ Stremio / Kodi / Browser
                │  • bg search    │
                │  • imports      │
                │  • maintenance  │
+               └────────┬────────┘
+                        │  background jobs only
+                        ▼
+               ┌─────────────────┐
+               │  TRAWL (opt.)   │
+               │  browser pool   │
+               │  FlareSolverr   │
+               │  /v1 API        │
                └─────────────────┘
 ```
 

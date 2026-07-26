@@ -1,5 +1,4 @@
 pub mod background_queue;
-pub mod browser;
 pub mod easynews;
 pub mod fetcher;
 pub mod indexer_credentials;

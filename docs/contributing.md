@@ -112,7 +112,7 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 
 Examples:
 ```
-feat: add Byparr support for Cloudflare-protected indexers
+feat: add TRAWL support for Cloudflare-protected indexers
 fix: return 404 on unknown stream type instead of 500
 docs: update env reference for DMM hashlist variables
 ```

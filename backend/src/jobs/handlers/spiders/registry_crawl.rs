@@ -57,7 +57,7 @@ impl JobHandler for RegistryCrawl {
 
         let client = &ctx.state.http;
         let pool = &ctx.state.pool;
-        let byparr_url = ctx.state.config.byparr_url.as_deref();
+        let trawl_url = ctx.state.config.trawl_url.as_deref();
         let kf = ctx
             .state
             .keyword_filters
@@ -87,7 +87,7 @@ impl JobHandler for RegistryCrawl {
 
             let fr = match fetcher::fetch_for_indexer(
                 client,
-                byparr_url,
+                trawl_url,
                 &url,
                 indexer.solve_cloudflare,
                 indexer.http_fallback,
@@ -153,7 +153,7 @@ impl JobHandler for RegistryCrawl {
                         rate_limit::wait(&domain, 2).await;
                         let dr = match fetcher::fetch_for_indexer(
                             client,
-                            byparr_url,
+                            trawl_url,
                             &detail_url,
                             indexer.solve_cloudflare,
                             indexer.http_fallback,

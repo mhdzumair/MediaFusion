@@ -286,14 +286,11 @@ pub struct AppConfig {
     /// this needs to be longer than the slowest scraper. Default: 120.
     pub request_timeout: u64,
 
-    // ── Browser automation (Browserless v2 + Byparr) ─────────────
-    /// Browserless v2 base URL (e.g. `http://browserless:3000`).
-    /// Used by spiders that need real Chrome execution to bypass JS bot challenges
-    /// (e.g. adm.tools on sport-video.org.ua).
-    pub browserless_url: Option<String>,
-    /// Byparr (FlareSolverr-compatible) base URL. When set, Cloudflare-protected
-    /// public indexers (1337x, TPB, etc.) are fetched via Byparr instead of plain HTTP.
-    pub byparr_url: Option<String>,
+    // ── Browser automation (TRAWL) ───────────────────────────────
+    /// TRAWL (FlareSolverr-compatible) base URL. When set, Cloudflare-protected
+    /// public indexers (1337x, TPB, ext.to, etc.) and browser-backed spider fetches
+    /// are handled via TRAWL's browser pool and session cache.
+    pub trawl_url: Option<String>,
     /// Local path to `scraper_config.json` (fallback when remote fetch fails).
     pub scraper_config_path: String,
     /// `local` reads only from disk; `remote` (default) fetches from GitHub with Redis cache.
@@ -762,10 +759,9 @@ impl AppConfig {
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(15),
             stream_raw_redis_cache_ttl: env("STREAM_RAW_REDIS_CACHE_TTL_SECONDS")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(900),
-            browserless_url: env("BROWSERLESS_URL").ok()
-                .filter(|s| !s.is_empty())
-                .map(|u| u.trim_end_matches('/').to_string()),
-            byparr_url: env("BYPARR_URL").ok()
+            trawl_url: env("TRAWL_URL")
+                .ok()
+                .or_else(|| env("BYPARR_URL").ok())
                 .filter(|s| !s.is_empty())
                 .map(|u| u.trim_end_matches('/').to_string()),
             scraper_config_path: env("SCRAPER_CONFIG_PATH")

@@ -101,7 +101,7 @@ fn validate_telegram_stream(
 }
 
 pub(crate) struct FanOutOpts {
-    pub byparr_url: Option<String>,
+    pub trawl_url: Option<String>,
     pub bypass_ttl: bool,
     pub max_process_override: Option<(usize, Duration)>,
     pub query_timeout_override: Option<Duration>,
@@ -110,7 +110,7 @@ pub(crate) struct FanOutOpts {
 
 fn live_fan_out_opts(cfg: &crate::config::AppConfig) -> FanOutOpts {
     FanOutOpts {
-        byparr_url: None,
+        trawl_url: None,
         bypass_ttl: false,
         max_process_override: None,
         query_timeout_override: None,
@@ -120,7 +120,7 @@ fn live_fan_out_opts(cfg: &crate::config::AppConfig) -> FanOutOpts {
 
 fn background_fan_out_opts(cfg: &crate::config::AppConfig) -> FanOutOpts {
     FanOutOpts {
-        byparr_url: cfg.byparr_url.clone(),
+        trawl_url: cfg.trawl_url.clone(),
         bypass_ttl: true,
         max_process_override: Some((
             cfg.background_max_process,
@@ -536,7 +536,7 @@ pub async fn run_usenet(
 /// Full torrent + usenet fan-out for background worker re-scrapes.
 ///
 /// Bypasses live-search TTL gates and Redis lock; uses deeper processing limits
-/// and Byparr for public indexers. Invalidates stream cache when done.
+/// and TRAWL for public indexers. Invalidates stream cache when done.
 pub async fn run_background(
     state: &AppState,
     user_data: &UserData,
@@ -997,17 +997,17 @@ async fn fan_out_with_opts(
         spawned_scrapers.push("torbox_search");
     }
 
-    // ── Public torrent indexers (multi-site, optional Byparr) ────────────────
+    // ── Public torrent indexers (multi-site, optional TRAWL) ────────────────
     if cfg.is_scrap_from_public_indexers
         && is_stale("public_indexers", cfg.public_indexers_search_ttl)
     {
         let http = http.clone();
         let meta = meta.clone();
         let mt = media_type.to_string();
-        // CF bypass (byparr) must NOT run during live API requests — it launches
+        // CF bypass (TRAWL) must NOT run during live API requests — it launches
         // Chromium sessions and causes severe CPU/latency spikes. Background workers
-        // pass the configured byparr URL via FanOutOpts.
-        let byparr = opts.byparr_url.clone();
+        // pass the configured TRAWL URL via FanOutOpts.
+        let trawl = opts.trawl_url.clone();
         let sites = cfg.public_indexers_live_search_sites.clone();
         let hg = health_gate.clone();
         let kf = kf.clone();
@@ -1020,7 +1020,7 @@ async fn fan_out_with_opts(
                 &mt,
                 season,
                 episode,
-                byparr.as_deref(),
+                trawl.as_deref(),
                 sites.as_deref(),
                 Some(&hg),
                 &kf,

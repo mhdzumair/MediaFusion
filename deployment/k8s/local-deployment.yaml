@@ -338,8 +338,8 @@ spec:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
                 optional: true
-          - name: SCRAPLING_CDP_URL
-            value: "ws://localhost:3000"
+          - name: TRAWL_URL
+            value: "http://trawl-service:8191"
         resources:
           requests:
             memory: "500Mi"
@@ -347,26 +347,6 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "400m"
-      - name: browserless
-        image: browserless/chrome:latest
-        ports:
-        - containerPort: 3000
-        env:
-          - name: ENABLE_DEBUGGER
-            value: "false"
-          - name: PREBOOT_CHROME
-            value: "true"
-          - name: MAX_CONCURRENT_SESSIONS
-            value: "2"
-          - name: CONNECTION_TIMEOUT
-            value: "60000"
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "200m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
 
 ---
 
@@ -693,6 +673,54 @@ spec:
     - protocol: TCP
       port: 6379
       targetPort: 6379
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trawl-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trawl
+  template:
+    metadata:
+      labels:
+        app: trawl
+    spec:
+      containers:
+      - name: trawl
+        image: ghcr.io/germondai/trawl:latest
+        ports:
+        - containerPort: 8191
+        env:
+          - name: REDIS_URL
+            value: "redis://redis-service:6379/1"
+          - name: BROWSER_POOL_SIZE
+            value: "3"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: trawl-service
+spec:
+  selector:
+    app: trawl
+  ports:
+    - protocol: TCP
+      port: 8191
+      targetPort: 8191
 
 ---
 

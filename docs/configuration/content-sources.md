@@ -78,22 +78,42 @@ Manual scrapes (web UI or `/scrape` in the bot) default to **25 messages per cha
 
 Disable this to reduce latency at the cost of fewer real-time results.
 
-## Scrapling (browser-based scraping)
+## TRAWL (browser-based scraping)
 
-Used for public indexers that require JavaScript or Cloudflare bypass:
+[TRAWL](https://github.com/germondai/trawl) is the browser pool used by Rust v6 workers to bypass Cloudflare and JS bot challenges. It exposes a FlareSolverr-compatible `/v1` API.
+
+Set `TRAWL_URL` to the TRAWL base URL (e.g. `http://trawl:8191` in Docker Compose). When unset, CF-protected scrapers are skipped or degraded:
+
+| Spider / source | Behaviour without TRAWL |
+|---|---|
+| ext.to (`spider_*_ext`) | Listing pages may work; magnet/torrent AJAX downloads fail |
+| sport-video (`spider_sport_video`) | Job exits immediately with a warning |
+| Public indexers (1337x, TPB, …) | CF indexers skipped during `spider_registry_crawl` |
+| Formula feeds (Reddit RSS) | Direct HTTP only; no browser fallback |
 
 | Variable | Default | Description |
 |---|---|---|
-| `SCRAPLING_CDP_URL` | `None` | WebSocket URL of a running Browserless / Chrome DevTools endpoint (e.g. `ws://browserless:3000`) |
+| `TRAWL_URL` | — | TRAWL base URL (FlareSolverr-compatible API at `/v1`). |
+| `BYPARR_URL` | — | **Deprecated alias** for `TRAWL_URL`. |
+
+In Docker Compose, TRAWL shares the MediaFusion Redis instance on **database 1** (`redis://redis:6379/1`). MediaFusion uses database 0. Key namespaces do not overlap.
+
+### Python v5 only (deprecated)
+
+These variables applied to the removed Scrapling/Browserless stack in `python-deprecated/`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `SCRAPLING_CDP_URL` | `None` | WebSocket CDP endpoint for deprecated Scrapling workers |
 | `SCRAPLING_FETCHER_MODE` | `stealthy` | `stealthy` or `dynamic` |
 | `SCRAPLING_HEADLESS` | `true` | Run browser headlessly |
 | `SCRAPLING_SOLVE_CLOUDFLARE` | `true` | Attempt Cloudflare bypass |
 | `SCRAPLING_REAL_CHROME` | `false` | Use a real Chrome binary instead of Playwright |
 | `SCRAPLING_PROXY_URL` | `None` | Proxy for scrapling requests |
-| `PUBLIC_INDEXERS_LIVE_SEARCH_ENABLE_CLOUDFLARE_SOLVER` | `false` | Enable Cloudflare solver for live searches |
+| `PUBLIC_INDEXERS_LIVE_SEARCH_ENABLE_CLOUDFLARE_SOLVER` | `false` | Enable Cloudflare solver for live searches (Python v5) |
 
 !!! tip "Cloudflare solver"
-    Leave `PUBLIC_INDEXERS_LIVE_SEARCH_ENABLE_CLOUDFLARE_SOLVER=false` unless you need it — it increases resource usage significantly. Requires a `SCRAPLING_CDP_URL` endpoint.
+    Rust v6 workers use `TRAWL_URL` for background jobs only — live `/stream/` requests never invoke TRAWL inline. Leave `PUBLIC_INDEXERS_LIVE_SEARCH_ENABLE_CLOUDFLARE_SOLVER=false` unless you still run the deprecated Python server.
 
 ## Proxy settings
 

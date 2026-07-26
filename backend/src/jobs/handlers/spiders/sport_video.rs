@@ -1,9 +1,7 @@
 /// Scraper for sport-video.org.ua — sports torrent listings.
 ///
 /// The site's torrent download endpoints are protected by the adm.tools JavaScript
-/// bot challenge, which requires a real browser to solve.  This handler uses a
-/// browserless v2 container (configured via `BROWSERLESS_URL`) to navigate the site
-/// and execute the challenge-solving fetch inside a real Chrome page context.
+/// bot challenge. TRAWL (`TRAWL_URL`) solves these via its browser pool.
 ///
 /// Site structure:
 ///   - Category page URL: configured in `scraper_config.yaml` under
@@ -24,8 +22,8 @@ use crate::{
     },
     parser,
     scrapers::{
-        ScrapedStream, SearchMeta, browser,
-        fetcher::{fetch_byparr, fetch_plain},
+        ScrapedStream, SearchMeta,
+        fetcher::{fetch_plain, fetch_trawl, fetch_trawl_bytes},
         media_resolve, stream_convert,
     },
     util::rate_limit,
@@ -232,12 +230,12 @@ async fn fetch_page(
     label: &str,
     url: &str,
     client: &reqwest::Client,
-    byparr_url: &Option<String>,
+    trawl_url: &Option<String>,
 ) -> Option<FetchResult> {
     for attempt in 1u32..=3 {
         let result = async {
-            if let Some(bp) = byparr_url
-                && let Some(r) = fetch_byparr(client, bp, url).await
+            if let Some(bp) = trawl_url
+                && let Some(r) = fetch_trawl(client, bp, url).await
             {
                 return Ok(r);
             }
@@ -278,14 +276,14 @@ impl JobHandler for SportVideoCrawl {
         }
 
         let client = &ctx.state.http;
-        let byparr_url = ctx.state.config.byparr_url.clone();
+        let trawl_url = ctx.state.config.trawl_url.clone();
         let pool = &ctx.state.pool;
 
-        let Some(ref browserless_url) = ctx.state.config.browserless_url else {
+        let Some(ref trawl) = trawl_url else {
             warn!(
-                "sport_video: BROWSERLESS_URL is not configured — \
-                 torrent downloads require a browserless v2 container to solve \
-                 the adm.tools JS challenge.  Set BROWSERLESS_URL=http://browserless:3000."
+                "sport_video: TRAWL_URL is not configured — \
+                 torrent downloads require TRAWL to solve JS bot challenges. \
+                 Set TRAWL_URL=http://trawl:8191."
             );
             return Ok(());
         };
@@ -300,8 +298,8 @@ impl JobHandler for SportVideoCrawl {
 
             rate_limit::wait(rate_key, 1).await;
 
-            // Category HTML pages are static — plain HTTP works; byparr is a bonus.
-            let page = match fetch_page("sport_video", category_url, client, &byparr_url).await {
+            // Category HTML pages are static — plain HTTP works; TRAWL is a bonus.
+            let page = match fetch_page("sport_video", category_url, client, &trawl_url).await {
                 Some(p) if !p.html.is_empty() => p,
                 _ => {
                     warn!("sport_video: failed to fetch category '{category}' at {category_url}");
@@ -336,7 +334,7 @@ impl JobHandler for SportVideoCrawl {
                 } else if let Some(page_url) = block.torrent_page_href {
                     rate_limit::wait(rate_key, 1).await;
                     if let Some(detail) =
-                        fetch_page("sport_video", &page_url, client, &byparr_url).await
+                        fetch_page("sport_video", &page_url, client, &trawl_url).await
                     {
                         torrent_urls.extend(parse_torrent_detail_page(&detail.html, base_url));
                     }
@@ -349,22 +347,13 @@ impl JobHandler for SportVideoCrawl {
                         return Err(JobError::Cancelled);
                     }
 
-                    // Throttle: 15 browser downloads per minute to avoid overwhelming
-                    // the browserless container and the target site.
+                    // Throttle: 15 TRAWL downloads per minute to avoid overwhelming
+                    // the browser pool and the target site.
                     rate_limit::wait_rpm(rate_key, 15).await;
 
-                    // Use browserless v2 to solve the adm.tools JS challenge and
-                    // download the torrent binary from inside a real Chrome context.
-                    // The category page URL is a static HTML page (no challenge) — safe
-                    // to use as the navigation target that primes the browser session.
-                    let torrent_bytes = browser::fetch_torrent_via_browser(
-                        client,
-                        browserless_url,
-                        category_url,
-                        torrent_url,
-                    )
-                    .await
-                    .unwrap_or_default();
+                    let torrent_bytes = fetch_trawl_bytes(client, trawl, torrent_url)
+                        .await
+                        .unwrap_or_default();
 
                     let Some(info_hash) = extract_info_hash_from_torrent(&torrent_bytes) else {
                         debug!(

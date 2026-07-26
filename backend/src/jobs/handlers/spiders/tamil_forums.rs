@@ -18,7 +18,7 @@ use crate::{
     parser,
     scrapers::{
         ScrapedStream, SearchMeta,
-        fetcher::{fetch_byparr, fetch_plain},
+        fetcher::{fetch_plain, fetch_trawl},
         media_resolve,
         prowlarr::build_series_files,
         stream_convert,
@@ -140,7 +140,7 @@ async fn scrape_tamil_forum(
     ctx: &JobCtx,
 ) -> Result<(), JobError> {
     let client = &ctx.state.http;
-    let byparr_url = ctx.state.config.byparr_url.clone();
+    let trawl_url = ctx.state.config.trawl_url.clone();
     let pool = &ctx.state.pool;
 
     // Build the CSS selectors once.
@@ -180,10 +180,10 @@ async fn scrape_tamil_forum(
             let html = retry::with_retry(spider_name, || {
                 let url = listing_url.clone();
                 let client = client.clone();
-                let bp = byparr_url.clone();
+                let bp = trawl_url.clone();
                 async move {
                     if let Some(bp_url) = &bp
-                        && let Some(r) = fetch_byparr(&client, bp_url, &url).await
+                        && let Some(r) = fetch_trawl(&client, bp_url, &url).await
                     {
                         return Ok(r.html);
                     }
@@ -240,10 +240,10 @@ async fn scrape_tamil_forum(
                 let topic_html = retry::with_retry(spider_name, || {
                     let url = topic_url.clone();
                     let client = client.clone();
-                    let bp = byparr_url.clone();
+                    let bp = trawl_url.clone();
                     async move {
                         if let Some(bp_url) = &bp
-                            && let Some(r) = fetch_byparr(&client, bp_url, &url).await
+                            && let Some(r) = fetch_trawl(&client, bp_url, &url).await
                         {
                             return Ok(r.html);
                         }

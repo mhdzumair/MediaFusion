@@ -3,7 +3,7 @@
 /// Handles three handler types:
 ///   - Rss          — BT4G RSS feed (plain XML, no challenge)
 ///   - SubsPleaseJson — SubsPlease JSON search API
-///   - Html         — CSS-selector HTML parsing, optional Byparr for CF-protected sites
+///   - Html         — CSS-selector HTML parsing, optional TRAWL for CF-protected sites
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -52,13 +52,13 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-    byparr_url: Option<&str>,
+    trawl_url: Option<&str>,
     enabled_sites: Option<&str>,
     health_gate: Option<&HealthGateConfig>,
     keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
-    let byparr_available = byparr_url.is_some();
-    let indexers = get_indexers_for_media(media_type, enabled_sites, byparr_available);
+    let trawl_available = trawl_url.is_some();
+    let indexers = get_indexers_for_media(media_type, enabled_sites, trawl_available);
 
     let mut results: Vec<ScrapedStream> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -120,7 +120,7 @@ pub async fn scrape(
             media_type,
             season,
             episode,
-            byparr_url,
+            trawl_url,
             keyword_filters,
         )
         .await;
@@ -162,7 +162,7 @@ async fn scrape_indexer(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-    byparr_url: Option<&str>,
+    trawl_url: Option<&str>,
     keyword_filters: &KeywordFilterCache,
 ) -> (Vec<ScrapedStream>, bool) {
     match indexer.handler {
@@ -189,7 +189,7 @@ async fn scrape_indexer(
                 media_type,
                 season,
                 episode,
-                byparr_url,
+                trawl_url,
                 keyword_filters,
             )
             .await
@@ -494,7 +494,7 @@ async fn scrape_html(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-    byparr_url: Option<&str>,
+    trawl_url: Option<&str>,
     keyword_filters: &KeywordFilterCache,
 ) -> (Vec<ScrapedStream>, bool) {
     let queries = build_queries(meta, media_type, season, episode);
@@ -518,7 +518,7 @@ async fn scrape_html(
 
                 let fr = match fetcher::fetch_for_indexer(
                     client,
-                    byparr_url,
+                    trawl_url,
                     &url,
                     indexer.solve_cloudflare,
                     indexer.http_fallback,
@@ -562,7 +562,7 @@ async fn scrape_html(
                         data,
                         &base_url,
                         sim_min,
-                        byparr_url,
+                        trawl_url,
                         keyword_filters,
                     )
                     .await
@@ -591,7 +591,7 @@ async fn process_row_data(
     data: RowData,
     base_url: &str,
     sim_min: u32,
-    byparr_url: Option<&str>,
+    trawl_url: Option<&str>,
     keyword_filters: &KeywordFilterCache,
 ) -> Option<ScrapedStream> {
     if keyword_filters.matches_blocked_keyword(&data.title) {
@@ -616,7 +616,7 @@ async fn process_row_data(
             let detail_url = resolve_url(base_url, &detail_href)?;
             let dr = fetcher::fetch_for_indexer(
                 client,
-                byparr_url,
+                trawl_url,
                 &detail_url,
                 indexer.solve_cloudflare,
                 indexer.http_fallback,

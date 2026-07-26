@@ -112,5 +112,7 @@ kubectl create secret generic mediafusion-secrets \
 
 | File | Description |
 |---|---|
-| `deployment/k8s/local-deployment.yaml` | Standard deployment, single PostgreSQL |
+| `deployment/k8s/local-deployment.yaml` | Standard deployment, single PostgreSQL, TRAWL |
 | `deployment/k8s/postgres-ha-deployment.yaml` | PostgreSQL HA with primary + read replica |
+
+The standard manifest deploys TRAWL alongside MediaFusion. TRAWL uses Redis database `1` on the shared `redis-service`; set `TRAWL_URL=http://trawl-service:8191` on workers that run CF-protected scrapers.

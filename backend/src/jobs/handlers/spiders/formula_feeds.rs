@@ -13,7 +13,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{browser, rss::parse_rss_xml},
+    scrapers::{fetcher::fetch_trawl, rss::parse_rss_xml},
     util::{browser_headers, rate_limit},
 };
 
@@ -105,10 +105,10 @@ async fn fetch_direct(client: &Client, kind: FeedKind, url: &str) -> Result<(u16
     Ok((status, body))
 }
 
-/// Reddit RSS: direct HTTP first, browserless Chrome fallback on 403/429/failure.
+/// Reddit RSS: direct HTTP first, TRAWL fallback on 403/429/failure.
 async fn fetch_reddit_feed_xml(
     client: &Client,
-    browserless_url: Option<&str>,
+    trawl_url: Option<&str>,
     urls: &[&str],
     label: &str,
 ) -> Option<String> {
@@ -152,40 +152,19 @@ async fn fetch_reddit_feed_xml(
                 }
             }
 
-            if let Some(bl_url) = browserless_url {
-                info!("{SOURCE}/{label}: trying browserless for {url}");
-                rate_limit::wait("formula_feeds_browserless", 1).await;
-                match browser::fetch_text_via_browser(
-                    client,
-                    bl_url,
-                    url,
-                    Some(browser_headers::CHROME_USER_AGENT),
-                )
-                .await
+            if let Some(trawl) = trawl_url {
+                info!("{SOURCE}/{label}: trying TRAWL for {url}");
+                rate_limit::wait("formula_feeds_trawl", 1).await;
+                if let Some(result) = fetch_trawl(client, trawl, url).await
+                    && looks_like_rss_xml(&result.html)
                 {
-                    Some((status, body))
-                        if (200..300).contains(&status) && looks_like_rss_xml(&body) =>
-                    {
-                        info!(
-                            "{SOURCE}/{label}: browserless fetch {status} — {} bytes from {url}",
-                            body.len()
-                        );
-                        return Some(body);
-                    }
-                    Some((429, _)) if retry == 0 => {
-                        warn!("{SOURCE}/{label}: browserless HTTP 429 for {url}");
-                        continue;
-                    }
-                    Some((status, body)) => {
-                        warn!(
-                            "{SOURCE}/{label}: browserless HTTP {status} non-RSS ({} bytes) for {url}",
-                            body.len()
-                        );
-                    }
-                    None => {
-                        warn!("{SOURCE}/{label}: browserless transport error for {url}");
-                    }
+                    info!(
+                        "{SOURCE}/{label}: TRAWL fetch — {} bytes from {url}",
+                        result.html.len()
+                    );
+                    return Some(result.html);
                 }
+                warn!("{SOURCE}/{label}: TRAWL fetch failed or non-RSS for {url}");
             }
 
             break;
@@ -196,23 +175,21 @@ async fn fetch_reddit_feed_xml(
         }
     }
 
-    if browserless_url.is_none() {
-        warn!(
-            "{SOURCE}/{label}: all Reddit URLs failed — set BROWSERLESS_URL for browser fallback"
-        );
+    if trawl_url.is_none() {
+        warn!("{SOURCE}/{label}: all Reddit URLs failed — set TRAWL_URL for browser fallback");
     }
     None
 }
 
 async fn fetch_feed_xml(
     client: &Client,
-    browserless_url: Option<&str>,
+    trawl_url: Option<&str>,
     kind: FeedKind,
     urls: &[&str],
     label: &str,
 ) -> Option<String> {
     if matches!(kind, FeedKind::Reddit) {
-        return fetch_reddit_feed_xml(client, browserless_url, urls, label).await;
+        return fetch_reddit_feed_xml(client, trawl_url, urls, label).await;
     }
 
     for url in urls {
@@ -394,7 +371,7 @@ async fn scrape_formula_feeds(ctx: &JobCtx) -> Result<(), JobError> {
             filter: FeedFilter::FormulaOnly,
             uploader: Some("ss"),
         },
-        // Reddit feeds last — rate-limited; direct HTTP then browserless fallback.
+        // Reddit feeds last — rate-limited; direct HTTP then TRAWL fallback.
         FeedSpec {
             label: "egortech/Reddit",
             kind: FeedKind::Reddit,
@@ -411,7 +388,7 @@ async fn scrape_formula_feeds(ctx: &JobCtx) -> Result<(), JobError> {
         },
     ];
 
-    let browserless_url = ctx.state.config.browserless_url.as_deref();
+    let trawl_url = ctx.state.config.trawl_url.as_deref();
     let mut total_written = 0usize;
     let mut reddit_feeds_fetched = 0usize;
 
@@ -430,8 +407,7 @@ async fn scrape_formula_feeds(ctx: &JobCtx) -> Result<(), JobError> {
 
         rate_limit::wait("formula_feeds", 2).await;
 
-        let Some(xml) =
-            fetch_feed_xml(client, browserless_url, feed.kind, feed.urls, feed.label).await
+        let Some(xml) = fetch_feed_xml(client, trawl_url, feed.kind, feed.urls, feed.label).await
         else {
             continue;
         };

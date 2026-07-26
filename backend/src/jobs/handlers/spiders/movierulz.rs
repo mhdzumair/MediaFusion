@@ -19,7 +19,7 @@ use crate::{
     parser,
     scrapers::{
         ScrapedStream, SearchMeta,
-        fetcher::{fetch_byparr, fetch_plain},
+        fetcher::{fetch_plain, fetch_trawl},
         media_resolve, stream_convert,
     },
     util::{rate_limit, retry},
@@ -133,15 +133,15 @@ async fn fetch_html(
     label: &str,
     url: &str,
     client: &reqwest::Client,
-    byparr_url: &Option<String>,
+    trawl_url: &Option<String>,
 ) -> Option<String> {
     retry::with_retry(label, || {
         let url = url.to_string();
         let client = client.clone();
-        let bp = byparr_url.clone();
+        let bp = trawl_url.clone();
         async move {
             if let Some(bp_url) = &bp
-                && let Some(r) = fetch_byparr(&client, bp_url, &url).await
+                && let Some(r) = fetch_trawl(&client, bp_url, &url).await
             {
                 return Ok(r.html);
             }
@@ -161,7 +161,7 @@ async fn scrape_movierulz(args: &serde_json::Value, ctx: &JobCtx) -> Result<(), 
     let (homepage, seed_urls) = load_movierulz_config(&root);
     let client = &ctx.state.http;
     let pool = &ctx.state.pool;
-    let byparr_url = ctx.state.config.byparr_url.clone();
+    let trawl_url = ctx.state.config.trawl_url.clone();
     let tmdb_api_key = ctx.state.config.tmdb_api_key.as_deref();
     let cinemeta_fallback = ctx.state.config.imdb_cinemeta_fallback_enabled;
 
@@ -175,7 +175,7 @@ async fn scrape_movierulz(args: &serde_json::Value, ctx: &JobCtx) -> Result<(), 
 
         if is_homepage_seed(&seed, &homepage) {
             rate_limit::wait(&rate_key, 1).await;
-            if let Some(html) = fetch_html(SOURCE, &seed, client, &byparr_url).await {
+            if let Some(html) = fetch_html(SOURCE, &seed, client, &trawl_url).await {
                 for url in extract_movie_links(&html, &homepage) {
                     movie_urls.insert(url);
                 }
@@ -195,7 +195,7 @@ async fn scrape_movierulz(args: &serde_json::Value, ctx: &JobCtx) -> Result<(), 
             };
 
             rate_limit::wait(&rate_key, 1).await;
-            let Some(html) = fetch_html(SOURCE, &listing_url, client, &byparr_url).await else {
+            let Some(html) = fetch_html(SOURCE, &listing_url, client, &trawl_url).await else {
                 break;
             };
 
@@ -218,7 +218,7 @@ async fn scrape_movierulz(args: &serde_json::Value, ctx: &JobCtx) -> Result<(), 
         }
 
         rate_limit::wait(&rate_key, 1).await;
-        let Some(html) = fetch_html(SOURCE, &movie_url, client, &byparr_url).await else {
+        let Some(html) = fetch_html(SOURCE, &movie_url, client, &trawl_url).await else {
             continue;
         };
 

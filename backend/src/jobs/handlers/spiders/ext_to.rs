@@ -1,7 +1,7 @@
 /// Scrapers for ext.to torrent site — 5 catalog variants.
 ///
-/// ext.to is behind Cloudflare protection. We use the byparr (FlareSolverr)
-/// endpoint to get past the challenge when configured.
+/// ext.to is behind Cloudflare protection. We use TRAWL (FlareSolverr-compatible)
+/// to get past the challenge when configured.
 ///
 /// Scraping flow:
 ///   1. Browse the site (profile pages or search queries) via the listing URL.
@@ -23,12 +23,9 @@
 ///          otherwise `magnet`), `timestamp`, `hmac` (SHA256 of
 ///          `torrent_id|timestamp|pageToken`, despite the field's name it's a
 ///          plain hash, not an HMAC) and `sessid` (the csrfToken value).
-///        - This endpoint re-validates the CF clearance cookie against the
-///          User-Agent that earned it, so a bare `reqwest` POST always gets
-///          re-challenged even with the right cookies. We replay the cookie
-///          jar + UA harvested from byparr's detail-page fetch through a
-///          real browserless Chrome instance (`BROWSERLESS_URL`), which
-///          passes because it's an actual browser, not a bare HTTP client.
+///        - This endpoint re-validates the CF clearance cookie, so a bare
+///          `reqwest` POST gets re-challenged. TRAWL's browser session cache
+///          handles the same-origin AJAX POST instead.
 ///        - Fallback: legacy inline `magnet:?...` in HTML.
 ///   3. Build `ScrapedStream` and write via `stream_convert::write_back_torrents`.
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -46,8 +43,8 @@ use crate::{
     },
     parser,
     scrapers::{
-        ScrapedStream, SearchMeta, StreamFile, browser,
-        fetcher::{fetch_byparr, fetch_plain},
+        ScrapedStream, SearchMeta, StreamFile,
+        fetcher::{fetch_plain, fetch_trawl, fetch_trawl_bytes, fetch_trawl_post},
         media_resolve, stream_convert, torrent_metadata,
     },
     util::{rate_limit, retry},
@@ -206,15 +203,15 @@ async fn fetch_html(
     label: &str,
     url: &str,
     client: &reqwest::Client,
-    byparr_url: &Option<String>,
+    trawl_url: &Option<String>,
 ) -> Option<String> {
     retry::with_retry(label, || {
         let url = url.to_string();
         let client = client.clone();
-        let bp = byparr_url.clone();
+        let bp = trawl_url.clone();
         async move {
             if let Some(bp_url) = &bp
-                && let Some(r) = fetch_byparr(&client, bp_url, &url).await
+                && let Some(r) = fetch_trawl(&client, bp_url, &url).await
             {
                 return Ok(r.html);
             }
@@ -477,23 +474,19 @@ fn detail_has_torrent_download(html: &str) -> bool {
 async fn post_ext_to_ajax(
     label: &str,
     client: &reqwest::Client,
-    browserless_url: &str,
+    trawl_url: &str,
     detail_url: &str,
     ajax_url: &str,
     tid: u64,
     page_token: &str,
     csrf: &str,
     download_type: &str,
-    detail_cookies: &[(String, String)],
-    detail_user_agent: &str,
 ) -> Option<String> {
     retry::with_retry(label, || {
         let client = client.clone();
         let ajax_url = ajax_url.to_string();
         let referer = detail_url.to_string();
-        let bl_url = browserless_url.to_string();
-        let detail_cookies = detail_cookies.to_vec();
-        let detail_user_agent = detail_user_agent.to_string();
+        let trawl_url = trawl_url.to_string();
         let pt = page_token.to_string();
         let csrf = csrf.to_string();
         let download_type = download_type.to_string();
@@ -507,17 +500,19 @@ async fn post_ext_to_ajax(
                 urlencoding::encode(&csrf),
             );
 
-            browser::post_with_cookies_via_browser(
+            fetch_trawl_post(
                 &client,
-                &bl_url,
-                &referer,
+                &trawl_url,
                 &ajax_url,
                 &form_data,
-                &detail_cookies,
-                &detail_user_agent,
+                &[
+                    ("Content-Type", "application/x-www-form-urlencoded"),
+                    ("X-Requested-With", "XMLHttpRequest"),
+                    ("Referer", &referer),
+                ],
             )
             .await
-            .ok_or_else(|| "browserless request failed".to_string())
+            .ok_or_else(|| "trawl POST request failed".to_string())
         }
     })
     .await
@@ -543,9 +538,8 @@ fn magnet_from_ajax_response(raw: &str) -> Option<String> {
 
 async fn torrent_bytes_from_ajax_response(
     client: &reqwest::Client,
-    browserless_url: &str,
+    trawl_url: &str,
     base_url: &str,
-    detail_url: &str,
     raw: &str,
 ) -> Option<Vec<u8>> {
     if raw.as_bytes().first() == Some(&b'd') {
@@ -569,14 +563,14 @@ async fn torrent_bytes_from_ajax_response(
         format!("{base_url}/{}", url.trim_start_matches('/'))
     };
 
-    browser::fetch_torrent_via_browser(client, browserless_url, detail_url, &absolute)
-        .await
-        .or(torrent_metadata::download_torrent_bytes(
+    fetch_trawl_bytes(client, trawl_url, &absolute).await.or(
+        torrent_metadata::download_torrent_bytes(
             client,
             &absolute,
             std::time::Duration::from_secs(30),
         )
-        .await)
+        .await,
+    )
 }
 
 /// Fetch a detail page and extract magnet / torrent file plus HTML file rows.
@@ -585,16 +579,15 @@ async fn fetch_detail_download(
     base_url: &str,
     detail_url: &str,
     client: &reqwest::Client,
-    byparr_url: &Option<String>,
-    browserless_url: &Option<String>,
+    trawl_url: &Option<String>,
 ) -> Option<DetailDownload> {
     let detail_result = retry::with_retry(label, || {
         let url = detail_url.to_string();
         let client = client.clone();
-        let bp = byparr_url.clone();
+        let bp = trawl_url.clone();
         async move {
             if let Some(bp_url) = &bp
-                && let Some(r) = fetch_byparr(&client, bp_url, &url).await
+                && let Some(r) = fetch_trawl(&client, bp_url, &url).await
             {
                 return Ok(r);
             }
@@ -605,8 +598,6 @@ async fn fetch_detail_download(
     })
     .await
     .ok()?;
-    let detail_cookies = detail_result.cookies;
-    let detail_user_agent = detail_result.user_agent;
     let detail_html = detail_result.html;
     let detail_uploader = extract_uploader_from_detail_html(&detail_html);
     let html_files = parse_html_file_list(&detail_html);
@@ -636,38 +627,26 @@ async fn fetch_detail_download(
 
         if let Some(tid) = numeric_id {
             let ajax_url = format!("{base_url}/ajax/getTorrentMagnet.php");
-            if browserless_url.is_none() {
+            if trawl_url.is_none() {
                 warn!(
-                    "{label}: BROWSERLESS_URL not configured — ext.to AJAX downloads \
-                     require replaying a CF-cleared cookie through a real browser."
+                    "{label}: TRAWL_URL not configured — ext.to AJAX downloads \
+                     require TRAWL's browser session cache."
                 );
             }
 
-            if let Some(bl_url) = browserless_url.as_deref() {
+            if let Some(trawl) = trawl_url.as_deref() {
                 let prefer_torrent =
                     detail_has_torrent_download(&detail_html) || !html_files.is_empty();
 
                 if prefer_torrent
                     && let Some(raw) = post_ext_to_ajax(
-                        label,
-                        client,
-                        bl_url,
-                        detail_url,
-                        &ajax_url,
-                        tid,
-                        &pt,
-                        &csrf,
-                        "torrent",
-                        &detail_cookies,
-                        &detail_user_agent,
+                        label, client, trawl, detail_url, &ajax_url, tid, &pt, &csrf, "torrent",
                     )
                     .await
                 {
                     debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX torrent response");
-                    torrent_bytes = torrent_bytes_from_ajax_response(
-                        client, bl_url, base_url, detail_url, &raw,
-                    )
-                    .await;
+                    torrent_bytes =
+                        torrent_bytes_from_ajax_response(client, trawl, base_url, &raw).await;
                     if torrent_bytes.is_some() {
                         debug!(label, "downloaded .torrent via AJAX");
                     }
@@ -675,17 +654,7 @@ async fn fetch_detail_download(
 
                 if magnet.is_none()
                     && let Some(raw) = post_ext_to_ajax(
-                        label,
-                        client,
-                        bl_url,
-                        detail_url,
-                        &ajax_url,
-                        tid,
-                        &pt,
-                        &csrf,
-                        "magnet",
-                        &detail_cookies,
-                        &detail_user_agent,
+                        label, client, trawl, detail_url, &ajax_url, tid, &pt, &csrf, "magnet",
                     )
                     .await
                 {
@@ -716,8 +685,7 @@ pub(crate) async fn scrape_ext_catalog(
     let domain = ext_to_domain(&root);
     let base_url = format!("https://{domain}");
     let client = &ctx.state.http;
-    let byparr_url = ctx.state.config.byparr_url.clone();
-    let browserless_url = ctx.state.config.browserless_url.clone();
+    let trawl_url = ctx.state.config.trawl_url.clone();
     let pool = &ctx.state.pool;
     let rate_key = domain.clone();
 
@@ -754,8 +722,7 @@ pub(crate) async fn scrape_ext_catalog(
                 return Err(JobError::Cancelled);
             }
             rate_limit::wait(&rate_key, 1).await;
-            let Some(html) = fetch_html(spec.source, &current_url, client, &byparr_url).await
-            else {
+            let Some(html) = fetch_html(spec.source, &current_url, client, &trawl_url).await else {
                 break;
             };
             let next_url = find_next_page_url(&html, &base_url, &current_url, is_profile);
@@ -778,7 +745,7 @@ pub(crate) async fn scrape_ext_catalog(
 
             rate_limit::wait(&rate_key, 1).await;
 
-            let html = match fetch_html(spec.source, &current_url, client, &byparr_url).await {
+            let html = match fetch_html(spec.source, &current_url, client, &trawl_url).await {
                 Some(h) => h,
                 None => {
                     warn!("{}: failed to fetch listing {current_url}", spec.source);
@@ -808,15 +775,9 @@ pub(crate) async fn scrape_ext_catalog(
 
                 info!("{}: scraping \"{}\" — {detail_url}", spec.source, title);
 
-                let download = fetch_detail_download(
-                    spec.source,
-                    &base_url,
-                    &detail_url,
-                    client,
-                    &byparr_url,
-                    &browserless_url,
-                )
-                .await;
+                let download =
+                    fetch_detail_download(spec.source, &base_url, &detail_url, client, &trawl_url)
+                        .await;
 
                 let Some(download) = download else {
                     warn!(

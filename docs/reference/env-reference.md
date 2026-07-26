@@ -103,8 +103,8 @@ These 4 variables must be set before MediaFusion will start:
 | `TORRENTIO_URL` | `https://torrentio.strem.fun` | Torrentio base URL. |
 | `MEDIAFUSION_URL` | `https://mediafusion.elfhosted.com` | Peer MediaFusion instance URL for cross-instance aggregation. |
 | `MEDIAFUSION_SECRET_STR` | — | Optional secret string for authenticated scraping from the peer instance. |
-| `BYPARR_URL` | — | [Byparr](https://github.com/ThePhaseless/Byparr) (FlareSolverr-compatible) base URL. When set, Cloudflare-protected indexers are fetched via Byparr. |
-| `BROWSERLESS_URL` | — | Browserless v2 base URL (e.g. `http://browserless:3000`) for JS-heavy scrapers. |
+| `TRAWL_URL` | — | [TRAWL](https://github.com/germondai/trawl) (FlareSolverr-compatible) base URL. Handles Cloudflare-protected indexers, ext.to AJAX, sport-video torrent downloads, and Reddit RSS fallback via its browser pool. In Docker Compose, TRAWL shares the MediaFusion Redis instance on database `1` (`redis://redis:6379/1`). |
+| `BYPARR_URL` | — | **Deprecated alias** for `TRAWL_URL`. Accepted for backward compatibility. |
 | `REQUESTS_PROXY_URL` | — | HTTP proxy for all outbound scraper requests (and debrid API calls). Set to your gost/WARP tunnel URL. |
 | `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | Comma-separated (or JSON array) list of debrid provider IDs that bypass `REQUESTS_PROXY_URL` and connect directly. Ignored when `REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS` is set. Valid IDs: `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `stremthru`, `easydebrid`, `debrider`. |
 | `REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS` | `[]` | When non-empty, **only** these debrid provider IDs are routed through `REQUESTS_PROXY_URL`; all others connect directly. Takes precedence over `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS`. Same format and valid IDs as the exclude list. |
