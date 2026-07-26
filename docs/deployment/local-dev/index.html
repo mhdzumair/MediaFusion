@@ -965,6 +965,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Step 5: Run the background worker (optional)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#optional-trawl-for-cloudflare-scrapers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: TRAWL for Cloudflare scrapers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1865,6 +1882,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Step 5: Run the background worker (optional)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#optional-trawl-for-cloudflare-scrapers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: TRAWL for Cloudflare scrapers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2061,23 +2095,40 @@
 <p>In a separate terminal from the project root:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>cargo<span class="w"> </span>run<span class="w"> </span>--manifest-path<span class="w"> </span>backend/Cargo.toml<span class="w"> </span>--bin<span class="w"> </span>mediafusion-worker
 </span></code></pre></div>
+<h3 id="optional-trawl-for-cloudflare-scrapers">Optional: TRAWL for Cloudflare scrapers<a class="headerlink" href="#optional-trawl-for-cloudflare-scrapers" title="Permanent link">¶</a></h3>
+<p>The minimal dev stack (<code>docker-compose-minimal.yml</code>) does not include TRAWL. Scrapers for ext.to, sport-video, and CF-protected public indexers need it.</p>
+<p>Run TRAWL against the dev Redis (database 1):</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>trawl<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--shm-size<span class="o">=</span>1g<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">REDIS_URL</span><span class="o">=</span>redis://127.0.0.1:6379/1<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>-e<span class="w"> </span><span class="nv">BROWSER_POOL_SIZE</span><span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>-p<span class="w"> </span><span class="m">8191</span>:8191<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span>ghcr.io/germondai/trawl:latest
+</span></code></pre></div>
+<p>Add to your root <code>.env</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">TRAWL_URL</span><span class="o">=</span>http://127.0.0.1:8191
+</span></code></pre></div>
+<p>Test a single ext.to page scrape:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>cargo<span class="w"> </span>run<span class="w"> </span>--manifest-path<span class="w"> </span>backend/Cargo.toml<span class="w"> </span>--bin<span class="w"> </span>mediafusion-worker<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>--<span class="w"> </span>--run-job<span class="w"> </span>spider_movies_tv_ext<span class="w"> </span>--args<span class="w"> </span><span class="s1">'{"total_pages": 1}'</span>
+</span></code></pre></div>
+<p>See <a href="../worker-cli/">Worker CLI Reference</a> for all job names.</p>
 <hr>
 <h2 id="useful-tips">Useful tips<a class="headerlink" href="#useful-tips" title="Permanent link">¶</a></h2>
 <p><strong>Verbose Rust logs:</strong>
-</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nv">RUST_LOG</span><span class="o">=</span><span class="nv">mediafusion_api</span><span class="o">=</span>debug,tower_http<span class="o">=</span>debug<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--manifest-path<span class="w"> </span>backend/Cargo.toml<span class="w"> </span>--bin<span class="w"> </span>mediafusion-api
+</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nv">RUST_LOG</span><span class="o">=</span><span class="nv">mediafusion_api</span><span class="o">=</span>debug,tower_http<span class="o">=</span>debug<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--manifest-path<span class="w"> </span>backend/Cargo.toml<span class="w"> </span>--bin<span class="w"> </span>mediafusion-api
 </span></code></pre></div><p></p>
 <p><strong>Release build (faster, closer to production):</strong>
-</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>cargo<span class="w"> </span>run<span class="w"> </span>--manifest-path<span class="w"> </span>backend/Cargo.toml<span class="w"> </span>--bin<span class="w"> </span>mediafusion-api<span class="w"> </span>--release
+</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>cargo<span class="w"> </span>run<span class="w"> </span>--manifest-path<span class="w"> </span>backend/Cargo.toml<span class="w"> </span>--bin<span class="w"> </span>mediafusion-api<span class="w"> </span>--release
 </span></code></pre></div><p></p>
 <p><strong>Stop databases:</strong>
-</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">cd</span><span class="w"> </span>deployment/docker-compose
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose-minimal.yml<span class="w"> </span>down
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Remove volumes (full reset)</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose-minimal.yml<span class="w"> </span>down<span class="w"> </span>-v
+</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nb">cd</span><span class="w"> </span>deployment/docker-compose
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose-minimal.yml<span class="w"> </span>down
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Remove volumes (full reset)</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose-minimal.yml<span class="w"> </span>down<span class="w"> </span>-v
 </span></code></pre></div><p></p>
 <h2 id="running-tests">Running tests<a class="headerlink" href="#running-tests" title="Permanent link">¶</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest
 </span></code></pre></div>
 <p>See <a href="../../contributing/">Contributing</a> for the full contribution workflow.</p>
 

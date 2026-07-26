@@ -1225,13 +1225,30 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#scrapling-browser-based-scraping" class="md-nav__link">
+  <a href="#trawl-browser-based-scraping" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scrapling (browser-based scraping)
+        TRAWL (browser-based scraping)
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="TRAWL (browser-based scraping)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python-v5-only-deprecated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python v5 only (deprecated)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1879,13 +1896,30 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#scrapling-browser-based-scraping" class="md-nav__link">
+  <a href="#trawl-browser-based-scraping" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scrapling (browser-based scraping)
+        TRAWL (browser-based scraping)
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="TRAWL (browser-based scraping)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python-v5-only-deprecated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python v5 only (deprecated)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2161,8 +2195,59 @@
 </tbody>
 </table>
 <p>Disable this to reduce latency at the cost of fewer real-time results.</p>
-<h2 id="scrapling-browser-based-scraping">Scrapling (browser-based scraping)<a class="headerlink" href="#scrapling-browser-based-scraping" title="Permanent link">¶</a></h2>
-<p>Used for public indexers that require JavaScript or Cloudflare bypass:</p>
+<h2 id="trawl-browser-based-scraping">TRAWL (browser-based scraping)<a class="headerlink" href="#trawl-browser-based-scraping" title="Permanent link">¶</a></h2>
+<p><a href="https://github.com/germondai/trawl">TRAWL</a> is the browser pool used by Rust v6 workers to bypass Cloudflare and JS bot challenges. It exposes a FlareSolverr-compatible <code>/v1</code> API.</p>
+<p>Set <code>TRAWL_URL</code> to the TRAWL base URL (e.g. <code>http://trawl:8191</code> in Docker Compose). When unset, CF-protected scrapers are skipped or degraded:</p>
+<table>
+<thead>
+<tr>
+<th>Spider / source</th>
+<th>Behaviour without TRAWL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ext.to (<code>spider_*_ext</code>)</td>
+<td>Listing pages may work; magnet/torrent AJAX downloads fail</td>
+</tr>
+<tr>
+<td>sport-video (<code>spider_sport_video</code>)</td>
+<td>Job exits immediately with a warning</td>
+</tr>
+<tr>
+<td>Public indexers (1337x, TPB, …)</td>
+<td>CF indexers skipped during <code>spider_registry_crawl</code></td>
+</tr>
+<tr>
+<td>Formula feeds (Reddit RSS)</td>
+<td>Direct HTTP only; no browser fallback</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TRAWL_URL</code></td>
+<td>—</td>
+<td>TRAWL base URL (FlareSolverr-compatible API at <code>/v1</code>).</td>
+</tr>
+<tr>
+<td><code>BYPARR_URL</code></td>
+<td>—</td>
+<td><strong>Deprecated alias</strong> for <code>TRAWL_URL</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>In Docker Compose, TRAWL shares the MediaFusion Redis instance on <strong>database 1</strong> (<code>redis://redis:6379/1</code>). MediaFusion uses database 0. Key namespaces do not overlap.</p>
+<h3 id="python-v5-only-deprecated">Python v5 only (deprecated)<a class="headerlink" href="#python-v5-only-deprecated" title="Permanent link">¶</a></h3>
+<p>These variables applied to the removed Scrapling/Browserless stack in <code>python-deprecated/</code>:</p>
 <table>
 <thead>
 <tr>
@@ -2175,7 +2260,7 @@
 <tr>
 <td><code>SCRAPLING_CDP_URL</code></td>
 <td><code>None</code></td>
-<td>WebSocket URL of a running Browserless / Chrome DevTools endpoint (e.g. <code>ws://browserless:3000</code>)</td>
+<td>WebSocket CDP endpoint for deprecated Scrapling workers</td>
 </tr>
 <tr>
 <td><code>SCRAPLING_FETCHER_MODE</code></td>
@@ -2205,13 +2290,13 @@
 <tr>
 <td><code>PUBLIC_INDEXERS_LIVE_SEARCH_ENABLE_CLOUDFLARE_SOLVER</code></td>
 <td><code>false</code></td>
-<td>Enable Cloudflare solver for live searches</td>
+<td>Enable Cloudflare solver for live searches (Python v5)</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition tip">
 <p class="admonition-title">Cloudflare solver</p>
-<p>Leave <code>PUBLIC_INDEXERS_LIVE_SEARCH_ENABLE_CLOUDFLARE_SOLVER=false</code> unless you need it — it increases resource usage significantly. Requires a <code>SCRAPLING_CDP_URL</code> endpoint.</p>
+<p>Rust v6 workers use <code>TRAWL_URL</code> for background jobs only — live <code>/stream/</code> requests never invoke TRAWL inline. Leave <code>PUBLIC_INDEXERS_LIVE_SEARCH_ENABLE_CLOUDFLARE_SOLVER=false</code> unless you still run the deprecated Python server.</p>
 </div>
 <h2 id="proxy-settings">Proxy settings<a class="headerlink" href="#proxy-settings" title="Permanent link">¶</a></h2>
 <table>

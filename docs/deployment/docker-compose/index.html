@@ -934,6 +934,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#trawl-optional-cloudflare-js-challenge-bypass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TRAWL (optional — Cloudflare / JS challenge bypass)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#updating-mediafusion" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1979,6 +1990,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#trawl-optional-cloudflare-js-challenge-bypass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TRAWL (optional — Cloudflare / JS challenge bypass)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#updating-mediafusion" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2229,27 +2251,47 @@
 </tbody>
 </table>
 <hr>
+<h2 id="trawl-optional-cloudflare-js-challenge-bypass">TRAWL (optional — Cloudflare / JS challenge bypass)<a class="headerlink" href="#trawl-optional-cloudflare-js-challenge-bypass" title="Permanent link">¶</a></h2>
+<p>Several background scrapers need a real browser to bypass Cloudflare or site-specific JS challenges:</p>
+<ul>
+<li><strong>ext.to</strong> spiders (<code>spider_movies_tv_ext</code>, <code>spider_ufc_ext</code>, etc.)</li>
+<li><strong>sport-video.org.ua</strong> (<code>spider_sport_video</code>)</li>
+<li><strong>Public indexers</strong> behind Cloudflare (1337x, TPB, etc.) during <code>spider_registry_crawl</code></li>
+<li><strong>Reddit RSS</strong> fallback in formula feeds</li>
+</ul>
+<p>The full <code>docker-compose.yml</code> stack includes <a href="https://github.com/germondai/trawl">TRAWL</a> automatically. It speaks the FlareSolverr <code>/v1</code> API and is configured via <code>TRAWL_URL=http://trawl:8191</code> on the worker.</p>
+<p>TRAWL stores its session cache in <strong>Redis database 1</strong> on the shared <code>redis</code> service (MediaFusion uses database 0). No separate Redis container is needed.</p>
+<div class="admonition note">
+<p class="admonition-title">Live search</p>
+<p>TRAWL is <strong>not</strong> invoked during live <code>/stream/</code> API requests — only background worker jobs use it. This avoids CPU spikes on user-facing requests.</p>
+</div>
+<p>To verify TRAWL is healthy:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>http://localhost:8191/health<span class="w">   </span><span class="c1"># if port is published</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>trawl<span class="w"> </span>--tail<span class="w"> </span><span class="m">50</span>
+</span></code></pre></div>
+<p>For local native dev (without the full stack), run TRAWL separately and set <code>TRAWL_URL=http://127.0.0.1:8191</code> in your root <code>.env</code>. See <a href="../local-dev/#optional-trawl-for-cloudflare-scrapers">Local Development</a>.</p>
+<hr>
 <h2 id="updating-mediafusion">Updating MediaFusion<a class="headerlink" href="#updating-mediafusion" title="Permanent link">¶</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>git<span class="w"> </span>pull
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>down
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>pull
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>up<span class="w"> </span>-d
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>git<span class="w"> </span>pull
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>down
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>pull
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>up<span class="w"> </span>-d
 </span></code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Before updating to a new major version</p>
 <p>Check the <a href="https://github.com/mhdzumair/MediaFusion/releases">release notes</a> for any migration steps. Major schema changes require the old version to be stopped cleanly before updating.</p>
 </div>
 <h2 id="stopping-and-resetting">Stopping and resetting<a class="headerlink" href="#stopping-and-resetting" title="Permanent link">¶</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Stop without removing data</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>down
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Stop and wipe all data (destructive!)</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>down<span class="w"> </span>-v
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Stop without removing data</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>down
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Stop and wipe all data (destructive!)</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>down<span class="w"> </span>-v
 </span></code></pre></div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
 <p><strong>Check logs for a specific service:</strong>
-</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>mediafusion
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>postgres
+</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>mediafusion
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>postgres
 </span></code></pre></div><p></p>
 <p><strong>Common issues:</strong></p>
 <table>
@@ -2275,6 +2317,14 @@
 <tr>
 <td>Database connection errors</td>
 <td><code>POSTGRES_URI</code> not set correctly in <code>.env</code></td>
+</tr>
+<tr>
+<td>ext.to / sport-video spiders produce no streams</td>
+<td><code>TRAWL_URL</code> not set or TRAWL container unhealthy — check <code>docker compose logs trawl</code></td>
+</tr>
+<tr>
+<td>CF indexers skipped in registry crawl</td>
+<td>Same as above — public indexers with <code>solve_cloudflare</code> require TRAWL</td>
 </tr>
 </tbody>
 </table>

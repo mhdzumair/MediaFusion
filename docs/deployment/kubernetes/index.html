@@ -2150,7 +2150,7 @@
 <tbody>
 <tr>
 <td><code>deployment/k8s/local-deployment.yaml</code></td>
-<td>Standard deployment, single PostgreSQL</td>
+<td>Standard deployment, single PostgreSQL, TRAWL</td>
 </tr>
 <tr>
 <td><code>deployment/k8s/postgres-ha-deployment.yaml</code></td>
@@ -2158,6 +2158,7 @@
 </tr>
 </tbody>
 </table>
+<p>The standard manifest deploys TRAWL alongside MediaFusion. TRAWL uses Redis database <code>1</code> on the shared <code>redis-service</code>; set <code>TRAWL_URL=http://trawl-service:8191</code> on workers that run CF-protected scrapers.</p>
 
 
 

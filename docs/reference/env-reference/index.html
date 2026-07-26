@@ -2682,14 +2682,14 @@
 <td>Optional secret string for authenticated scraping from the peer instance.</td>
 </tr>
 <tr>
-<td><code>BYPARR_URL</code></td>
+<td><code>TRAWL_URL</code></td>
 <td>—</td>
-<td><a href="https://github.com/ThePhaseless/Byparr">Byparr</a> (FlareSolverr-compatible) base URL. When set, Cloudflare-protected indexers are fetched via Byparr.</td>
+<td><a href="https://github.com/germondai/trawl">TRAWL</a> (FlareSolverr-compatible) base URL. Handles Cloudflare-protected indexers, ext.to AJAX, sport-video torrent downloads, and Reddit RSS fallback via its browser pool. In Docker Compose, TRAWL shares the MediaFusion Redis instance on database <code>1</code> (<code>redis://redis:6379/1</code>).</td>
 </tr>
 <tr>
-<td><code>BROWSERLESS_URL</code></td>
+<td><code>BYPARR_URL</code></td>
 <td>—</td>
-<td>Browserless v2 base URL (e.g. <code>http://browserless:3000</code>) for JS-heavy scrapers.</td>
+<td><strong>Deprecated alias</strong> for <code>TRAWL_URL</code>. Accepted for backward compatibility.</td>
 </tr>
 <tr>
 <td><code>REQUESTS_PROXY_URL</code></td>
