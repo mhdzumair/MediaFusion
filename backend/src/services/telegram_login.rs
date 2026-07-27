@@ -1,13 +1,20 @@
-//! In-memory pending Telegram MTProto login state (phone/code/2FA).
+//! Redis-backed pending Telegram MTProto login state (phone/code/2FA).
+//!
+//! Pending login must survive load-balancer hops between API pods; an in-memory
+//! map breaks multi-pod deployments because each step may hit a different instance.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use grammers_client::client::{LoginToken, PasswordToken};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use fred::prelude::{Expiration, KeysInterface};
+use grammers_client::client::PasswordToken;
 use grammers_client::sender::SenderPool;
 use grammers_client::{Client, SignInError};
-use grammers_session::Session;
-use grammers_session::storages::MemorySession;
+use grammers_session::types::UpdatesState;
+use grammers_session::{Session, SessionData, storages::MemorySession};
+use grammers_tl_types as tl;
+use grammers_tl_types::{Deserializable, Serializable};
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -17,43 +24,46 @@ use crate::{
     util::telegram_session,
 };
 
-enum PendingEntry {
-    AwaitingCode {
-        phone: String,
-        login_token: LoginToken,
-        session: Arc<MemorySession>,
-        client: Arc<Client>,
-        _runner: JoinHandle<()>,
-    },
-    AwaitingPassword {
-        session: Arc<MemorySession>,
-        client: Arc<Client>,
-        password_token: Box<PasswordToken>,
-        _runner: JoinHandle<()>,
-    },
+const PENDING_LOGIN_TTL_SECS: i64 = 15 * 60;
+
+fn pending_login_key(user_id: i32) -> String {
+    format!("telegram:pending_login:{user_id}")
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum PendingStep {
+    AwaitingCode,
+    AwaitingPassword,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SessionSnapshot {
+    home_dc: i32,
+    dc_options: Vec<grammers_session::types::DcOption>,
+    updates_state: UpdatesState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RedisPendingLogin {
+    step: PendingStep,
+    phone: String,
+    phone_code_hash: String,
+    session: SessionSnapshot,
+    password_blob: Option<String>,
 }
 
 pub struct PendingLoginStore {
-    entries: Mutex<HashMap<i32, PendingEntry>>,
-}
-
-impl Default for PendingLoginStore {
-    fn default() -> Self {
-        Self::new()
-    }
+    redis: fred::clients::Client,
 }
 
 impl PendingLoginStore {
-    pub fn new() -> Self {
-        Self {
-            entries: Mutex::new(HashMap::new()),
-        }
+    pub fn new(redis: fred::clients::Client) -> Self {
+        Self { redis }
     }
 
-    pub fn clear(&self, user_id: UserId) {
-        if let Ok(mut map) = self.entries.lock() {
-            map.remove(&user_id.0);
-        }
+    pub async fn clear(&self, user_id: UserId) {
+        let _: Result<i64, _> = self.redis.del(&pending_login_key(user_id.0)).await;
     }
 }
 
@@ -80,42 +90,222 @@ fn require_api(config: &AppConfig) -> Result<(i32, &str), String> {
     Ok((api_id, api_hash))
 }
 
+async fn request_code_hash(
+    client: &Client,
+    phone: &str,
+    api_hash: &str,
+    api_id: i32,
+) -> Result<String, String> {
+    use tl::enums::auth::SentCode as SC;
+
+    let request = tl::functions::auth::SendCode {
+        phone_number: phone.to_string(),
+        api_id,
+        api_hash: api_hash.to_string(),
+        settings: tl::types::CodeSettings {
+            allow_flashcall: false,
+            current_number: false,
+            allow_app_hash: false,
+            allow_missed_call: false,
+            allow_firebase: false,
+            logout_tokens: None,
+            token: None,
+            app_sandbox: None,
+            unknown_number: false,
+        }
+        .into(),
+    };
+
+    let sent_code: tl::types::auth::SentCode = match client.invoke(&request).await {
+        Ok(x) => match x {
+            SC::Code(code) => code,
+            SC::Success(_) => return Err("unexpected login success before code entry".into()),
+            SC::PaymentRequired(_) => return Err("telegram payment required for login".into()),
+        },
+        Err(e) => return Err(format!("request login code: {e}")),
+    };
+
+    Ok(sent_code.phone_code_hash)
+}
+
+async fn sign_in_with_hash(
+    client: &Client,
+    phone: &str,
+    phone_code_hash: &str,
+    code: &str,
+) -> Result<grammers_client::peer::User, SignInError> {
+    match client
+        .invoke(&tl::functions::auth::SignIn {
+            phone_number: phone.to_string(),
+            phone_code_hash: phone_code_hash.to_string(),
+            phone_code: Some(code.to_string()),
+            email_verification: None,
+        })
+        .await
+    {
+        Ok(tl::enums::auth::Authorization::Authorization(x)) => {
+            Ok(grammers_client::peer::User::from_raw(client, x.user))
+        }
+        Ok(tl::enums::auth::Authorization::SignUpRequired(_)) => Err(SignInError::SignUpRequired),
+        Err(err) if err.is("SESSION_PASSWORD_NEEDED") => {
+            let password: tl::types::account::Password =
+                match client.invoke(&tl::functions::account::GetPassword {}).await {
+                    Ok(value) => value.into(),
+                    Err(error) => return Err(SignInError::Other(error)),
+                };
+            Err(SignInError::PasswordRequired(PasswordToken::new(password)))
+        }
+        Err(err) if err.is("PHONE_CODE_*") => Err(SignInError::InvalidCode),
+        Err(error) => Err(SignInError::Other(error)),
+    }
+}
+
+async fn fetch_password_data(client: &Client) -> Result<tl::types::account::Password, String> {
+    client
+        .invoke(&tl::functions::account::GetPassword {})
+        .await
+        .map_err(|e| format!("fetch password info: {e}"))
+        .map(Into::into)
+}
+
 async fn spawn_client(
     api_id: i32,
-    session_data: grammers_session::SessionData,
-) -> (Arc<MemorySession>, Arc<Client>, JoinHandle<()>) {
+    session_data: SessionData,
+) -> EphemeralClient {
     let session = Arc::new(MemorySession::from(session_data));
     let pool = SenderPool::new(Arc::clone(&session) as Arc<_>, api_id);
     let runner = pool.runner;
     let runner_task = tokio::spawn(async move {
         runner.run().await;
     });
-    (
-        Arc::clone(&session),
-        Arc::new(Client::new(pool.handle)),
-        runner_task,
-    )
+    EphemeralClient {
+        session,
+        client: Arc::new(Client::new(pool.handle)),
+        runner: runner_task,
+    }
+}
+
+/// Short-lived MTProto client for login steps — always disconnects on drop so retries
+/// cannot leave duplicate auth-key connections open against Telegram.
+struct EphemeralClient {
+    session: Arc<MemorySession>,
+    client: Arc<Client>,
+    runner: JoinHandle<()>,
+}
+
+impl EphemeralClient {
+    fn session(&self) -> &MemorySession {
+        &self.session
+    }
+
+    fn client(&self) -> &Client {
+        &self.client
+    }
+
+    fn shutdown(&mut self) {
+        self.client.disconnect();
+        self.runner.abort();
+    }
+}
+
+impl Drop for EphemeralClient {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+async fn snapshot_session(session: &MemorySession) -> Result<SessionSnapshot, String> {
+    let home_dc = session.home_dc_id().map_err(|e| format!("session home_dc: {e}"))?;
+    let updates_state = session
+        .updates_state()
+        .await
+        .map_err(|e| format!("session updates_state: {e}"))?;
+    let mut dc_options = Vec::new();
+    for dc_id in 1..=5 {
+        if let Ok(Some(opt)) = session.dc_option(dc_id)
+            && opt.auth_key.is_some()
+        {
+            dc_options.push(opt);
+        }
+    }
+    Ok(SessionSnapshot {
+        home_dc,
+        dc_options,
+        updates_state,
+    })
+}
+
+fn restore_session_data(snapshot: &SessionSnapshot) -> SessionData {
+    let mut data = SessionData {
+        home_dc: snapshot.home_dc,
+        updates_state: snapshot.updates_state.clone(),
+        ..Default::default()
+    };
+    for opt in &snapshot.dc_options {
+        data.dc_options.insert(opt.id, opt.clone());
+    }
+    data
+}
+
+fn serialize_password(password: &tl::types::account::Password) -> Result<String, String> {
+    let bytes = tl::enums::account::Password::Password(password.clone()).to_bytes();
+    Ok(BASE64.encode(bytes))
+}
+
+fn deserialize_password(blob: &str) -> Result<tl::types::account::Password, String> {
+    let bytes = BASE64
+        .decode(blob.trim())
+        .map_err(|e| format!("password blob decode: {e}"))?;
+    match tl::enums::account::Password::from_bytes(&bytes)
+        .map_err(|e| format!("password blob parse: {e}"))?
+    {
+        tl::enums::account::Password::Password(password) => Ok(password),
+    }
+}
+
+async fn save_pending(
+    redis: &fred::clients::Client,
+    user_id: UserId,
+    pending: &RedisPendingLogin,
+) -> Result<(), String> {
+    let json = serde_json::to_string(pending).map_err(|e| format!("serialize pending login: {e}"))?;
+    redis
+        .set::<(), _, _>(
+            &pending_login_key(user_id.0),
+            json,
+            Some(Expiration::EX(PENDING_LOGIN_TTL_SECS)),
+            None,
+            false,
+        )
+        .await
+        .map_err(|e| format!("redis save pending login: {e}"))
+}
+
+async fn load_pending(
+    redis: &fred::clients::Client,
+    user_id: UserId,
+) -> Result<Option<RedisPendingLogin>, String> {
+    let raw: Option<String> = redis
+        .get(&pending_login_key(user_id.0))
+        .await
+        .map_err(|e| format!("redis load pending login: {e}"))?;
+    raw.map(|json| serde_json::from_str(&json).map_err(|e| format!("parse pending login: {e}")))
+        .transpose()
+}
+
+async fn spawn_from_pending(
+    config: &AppConfig,
+    pending: &RedisPendingLogin,
+) -> Result<EphemeralClient, String> {
+    let (api_id, _) = require_api(config)?;
+    let session_data = restore_session_data(&pending.session);
+    Ok(spawn_client(api_id, session_data).await)
 }
 
 async fn export_session_data(
     session: &MemorySession,
 ) -> Result<grammers_session::SessionData, String> {
-    let home_dc = session
-        .home_dc_id()
-        .map_err(|e| format!("session home_dc: {e}"))?;
-    let dc = session
-        .dc_option(home_dc)
-        .map_err(|e| format!("session dc_option: {e}"))?
-        .ok_or_else(|| format!("session missing DC {home_dc} options"))?;
-    let mut data = grammers_session::SessionData {
-        home_dc,
-        ..Default::default()
-    };
-    if let Some(opt) = data.dc_options.get_mut(&home_dc) {
-        opt.ipv4 = dc.ipv4;
-        opt.auth_key = dc.auth_key;
-    }
-    Ok(data)
+    Ok(restore_session_data(&snapshot_session(session).await?))
 }
 
 async fn persist_authenticated_session(
@@ -151,25 +341,18 @@ pub async fn start_login(
     }
 
     let (api_id, api_hash) = require_api(config)?;
-    let (session, client, runner) =
-        spawn_client(api_id, grammers_session::SessionData::default()).await;
-    let login_token = client
-        .request_login_code(phone, api_hash)
-        .await
-        .map_err(|e| format!("request login code: {e}"))?;
+    let ephemeral = spawn_client(api_id, grammers_session::SessionData::default()).await;
+    let phone_code_hash = request_code_hash(ephemeral.client(), phone, api_hash, api_id).await?;
 
-    if let Ok(mut map) = pending.entries.lock() {
-        map.insert(
-            user_id.0,
-            PendingEntry::AwaitingCode {
-                phone: phone.to_string(),
-                login_token,
-                session,
-                client,
-                _runner: runner,
-            },
-        );
-    }
+    let snapshot = snapshot_session(ephemeral.session()).await?;
+    let state = RedisPendingLogin {
+        step: PendingStep::AwaitingCode,
+        phone: phone.to_string(),
+        phone_code_hash,
+        session: snapshot,
+        password_blob: None,
+    };
+    save_pending(&pending.redis, user_id, &state).await?;
 
     Ok(LoginStartResult::CodeSent {
         phone: phone.to_string(),
@@ -188,69 +371,62 @@ pub async fn verify_code(
         return Err("verification code is required".into());
     }
 
-    let entry = pending
-        .entries
-        .lock()
-        .ok()
-        .and_then(|mut map| map.remove(&user_id.0))
-        .ok_or_else(|| "login session expired — start again".to_string())?;
-
-    let PendingEntry::AwaitingCode {
-        phone,
-        login_token,
-        session,
-        client,
-        _runner,
-    } = entry
-    else {
-        return Err("expected verification code step".into());
+    let Some(state) = load_pending(&pending.redis, user_id).await? else {
+        return Err("login session expired — start again".to_string());
     };
+    if state.step != PendingStep::AwaitingCode {
+        return Err("expected verification code step".into());
+    }
 
-    match client.sign_in(&login_token, code).await {
+    let ephemeral = spawn_from_pending(config, &state).await?;
+    match sign_in_with_hash(
+        ephemeral.client(),
+        &state.phone,
+        &state.phone_code_hash,
+        code,
+    )
+    .await
+    {
         Ok(user) => {
-            let account_id =
-                persist_authenticated_session(pool, config, user_id, &session, &user).await?;
+            pending.clear(user_id).await;
+            let account_id = persist_authenticated_session(
+                pool,
+                config,
+                user_id,
+                ephemeral.session(),
+                &user,
+            )
+            .await?;
             Ok(LoginVerifyResult::Completed { telegram_account_id: account_id })
         }
         Err(SignInError::PasswordRequired(password_token)) => {
             let hint = password_token.hint().map(str::to_string);
-            if let Ok(mut map) = pending.entries.lock() {
-                map.insert(
-                    user_id.0,
-                    PendingEntry::AwaitingPassword {
-                        session,
-                        client,
-                        password_token: Box::new(password_token),
-                        _runner,
-                    },
-                );
-            }
+            let snapshot = snapshot_session(ephemeral.session()).await?;
+            let password_data = fetch_password_data(ephemeral.client()).await?;
+            let password_blob = serialize_password(&password_data)?;
+            let next = RedisPendingLogin {
+                step: PendingStep::AwaitingPassword,
+                phone: state.phone,
+                phone_code_hash: state.phone_code_hash,
+                session: snapshot,
+                password_blob: Some(password_blob),
+            };
+            save_pending(&pending.redis, user_id, &next).await?;
             Ok(LoginVerifyResult::PasswordRequired { hint })
         }
-        Err(SignInError::InvalidCode) => {
-            if let Ok(mut map) = pending.entries.lock() {
-                map.insert(
-                    user_id.0,
-                    PendingEntry::AwaitingCode {
-                        phone,
-                        login_token,
-                        session,
-                        client,
-                        _runner,
-                    },
-                );
-            }
+        Err(SignInError::InvalidCode) => Err(
+            "Telegram rejected the verification code. If you pasted the code into a Telegram \
+             chat (including this bot), Telegram blocks login for security — enter the code on \
+             the MediaFusion web UI instead (Configure → Telegram)."
+                .into(),
+        ),
+        Err(SignInError::SignUpRequired) => {
+            pending.clear(user_id).await;
             Err(
-                "Telegram rejected the verification code. If you pasted the code into a Telegram \
-                 chat (including this bot), Telegram blocks login for security — enter the code on \
-                 the MediaFusion web UI instead (Configure → Telegram)."
+                "this Telegram account is not registered — create it in the official Telegram app first"
                     .into(),
             )
         }
-        Err(SignInError::SignUpRequired) => Err(
-            "this Telegram account is not registered — create it in the official Telegram app first"
-                .into(),
-        ),
         Err(e) => Err(format!("sign in failed: {e}")),
     }
 }
@@ -267,35 +443,56 @@ pub async fn verify_password(
         return Err("password is required".into());
     }
 
-    let entry = pending
-        .entries
-        .lock()
-        .ok()
-        .and_then(|mut map| map.remove(&user_id.0))
-        .ok_or_else(|| "login session expired — start again".to_string())?;
-
-    let PendingEntry::AwaitingPassword {
-        session,
-        client,
-        password_token,
-        _runner,
-    } = entry
-    else {
-        return Err("expected 2FA password step".into());
+    let Some(state) = load_pending(&pending.redis, user_id).await? else {
+        return Err("login session expired — start again".to_string());
     };
+    if state.step != PendingStep::AwaitingPassword {
+        return Err("expected 2FA password step".into());
+    }
+    let password_blob = state
+        .password_blob
+        .as_deref()
+        .ok_or_else(|| "expected 2FA password step".to_string())?;
 
-    let user = client
-        .check_password(*password_token, password)
+    let password_data = deserialize_password(password_blob)?;
+    let password_token = PasswordToken::new(password_data);
+
+    let ephemeral = spawn_from_pending(config, &state).await?;
+    match ephemeral
+        .client()
+        .check_password(password_token, password)
         .await
-        .map_err(|e| match e {
-            SignInError::InvalidPassword(_) => "invalid 2FA password".to_string(),
-            other => format!("2FA sign in failed: {other}"),
-        })?;
-
-    let account_id = persist_authenticated_session(pool, config, user_id, &session, &user).await?;
-    Ok(LoginPasswordResult::Completed {
-        telegram_account_id: account_id,
-    })
+    {
+        Ok(user) => {
+            pending.clear(user_id).await;
+            let account_id = persist_authenticated_session(
+                pool,
+                config,
+                user_id,
+                ephemeral.session(),
+                &user,
+            )
+            .await?;
+            Ok(LoginPasswordResult::Completed {
+                telegram_account_id: account_id,
+            })
+        }
+        Err(SignInError::InvalidPassword(_)) => {
+            let snapshot = snapshot_session(ephemeral.session()).await?;
+            let password_data = fetch_password_data(ephemeral.client()).await?;
+            let password_blob = serialize_password(&password_data)?;
+            let next = RedisPendingLogin {
+                step: PendingStep::AwaitingPassword,
+                phone: state.phone,
+                phone_code_hash: state.phone_code_hash,
+                session: snapshot,
+                password_blob: Some(password_blob),
+            };
+            save_pending(&pending.redis, user_id, &next).await?;
+            Err("invalid 2FA password".into())
+        }
+        Err(e) => Err(format!("2FA sign in failed: {e}")),
+    }
 }
 
 pub async fn delete_user_session(
@@ -304,8 +501,9 @@ pub async fn delete_user_session(
     clients: &crate::scrapers::telegram_clients::TelegramClientPool,
     user_id: UserId,
 ) -> Result<bool, String> {
-    pending.clear(user_id);
+    pending.clear(user_id).await;
     clients.invalidate(user_id).await;
+    crate::services::telegram_peer::invalidate_dialog_peer_cache(user_id).await;
     db::user_telegram_session::delete_session(pool, user_id)
         .await
         .map_err(|e| format!("delete session: {e}"))

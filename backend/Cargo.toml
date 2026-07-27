@@ -173,7 +173,8 @@ aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", 
 
 # Telegram MTProto live scraper (Phase 2c)
 grammers-client = { version = "0.10", default-features = false }
-grammers-session = { version = "0.10", default-features = false }
+grammers-session = { version = "0.10", default-features = false, features = ["serde"] }
+grammers-tl-types = { version = "0.10", features = ["tl-mtproto"] }
 
 # See tikv-jemallocator docs: cfg(not(target_env = "msvc")). Optional so CI can
 # disable it for Windows GNU cross-compiles where jemalloc does not link.

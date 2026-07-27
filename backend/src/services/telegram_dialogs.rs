@@ -3,9 +3,12 @@
 use grammers_client::peer::Peer;
 use grammers_session::types::PeerRef;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::{
-    db::types::UserId, scrapers::telegram_clients::TelegramClientPool, services::telegram_peer,
+    db::types::UserId,
+    scrapers::telegram_clients::{TelegramClientPool, is_auth_key_duplicated},
+    services::telegram_peer,
     util::telegram_channel_id,
 };
 
@@ -34,10 +37,33 @@ pub async fn list_scrapable_dialogs(
     user_id: UserId,
     limit: usize,
 ) -> Result<Vec<ScrapableDialog>, String> {
-    let Some(client) = clients.get_client(pool, user_id).await else {
-        return Err("Telegram scraping session is not connected".into());
-    };
+    for attempt in 0..2 {
+        let Some(client) = clients.get_client(pool, user_id).await else {
+            return Err("Telegram scraping session is not connected".into());
+        };
 
+        match fetch_scrapable_dialogs(client, user_id, limit).await {
+            Ok(dialogs) => return Ok(dialogs),
+            Err(err) if attempt == 0 && is_auth_key_duplicated(&err) => {
+                tracing::warn!(
+                    "telegram: AUTH_KEY_DUPLICATED for user {} — recycling pooled client",
+                    user_id.0
+                );
+                clients.invalidate(user_id).await;
+                telegram_peer::invalidate_dialog_peer_cache(user_id).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err("Telegram session is busy — wait a moment and try again".into())
+}
+
+async fn fetch_scrapable_dialogs(
+    client: Arc<grammers_client::Client>,
+    user_id: UserId,
+    limit: usize,
+) -> Result<Vec<ScrapableDialog>, String> {
     let mut iter = client.iter_dialogs();
     let mut results = Vec::new();
     let mut peer_map = HashMap::<i64, PeerRef>::new();

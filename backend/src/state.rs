@@ -371,8 +371,9 @@ impl AppState {
         let telegram_clients = Arc::new(
             crate::scrapers::telegram_clients::TelegramClientPool::new(config.clone()),
         );
-        let telegram_pending_logins =
-            Arc::new(crate::services::telegram_login::PendingLoginStore::new());
+        let telegram_pending_logins = Arc::new(
+            crate::services::telegram_login::PendingLoginStore::new(redis.clone()),
+        );
 
         // Load keyword cache — sync_keywords_from_file is called after
         // migrate::run in main/worker so the schema is guaranteed to exist.

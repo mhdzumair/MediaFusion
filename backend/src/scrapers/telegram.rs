@@ -84,6 +84,13 @@ fn document_is_video(doc: &grammers_client::media::Document) -> bool {
 
 // ─── Scrape entry point ───────────────────────────────────────────────────────
 
+#[derive(Debug, Clone)]
+pub struct ChannelScrapeOutcome {
+    pub streams: Vec<ScrapedTelegramStream>,
+    pub channel_title: Option<String>,
+    pub error: Option<String>,
+}
+
 /// Scrape the given channels and return matching streams.
 #[allow(clippy::too_many_arguments)]
 pub async fn scrape(
@@ -103,15 +110,15 @@ pub async fn scrape(
             Some(ChannelRef::DialogId(_))
         )
     });
-    let dialog_peers = if needs_dialog_lookup {
+    let (dialog_peers, dialog_load_error) = if needs_dialog_lookup {
         telegram_peer::load_dialog_peer_map(client).await
     } else {
-        HashMap::new()
+        (HashMap::new(), None)
     };
 
     let mut results = Vec::new();
     for channel in channels {
-        let channel_results = scrape_channel(
+        let outcome = scrape_channel(
             client,
             channel,
             meta,
@@ -122,11 +129,43 @@ pub async fn scrape(
             min_size,
             keyword_filters,
             &dialog_peers,
+            dialog_load_error.as_deref(),
         )
         .await;
-        results.extend(channel_results);
+        results.extend(outcome.streams);
     }
     results
+}
+
+/// Scrape a single channel and report resolution / iteration failures.
+#[allow(clippy::too_many_arguments)]
+pub async fn scrape_single_channel(
+    client: &Client,
+    channel: &str,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    message_limit: Option<i32>,
+    min_size: u64,
+    keyword_filters: &KeywordFilterCache,
+    dialog_peers: &HashMap<i64, grammers_session::types::PeerRef>,
+    dialog_load_error: Option<&str>,
+) -> ChannelScrapeOutcome {
+    scrape_channel(
+        client,
+        channel,
+        meta,
+        media_type,
+        season,
+        episode,
+        message_limit,
+        min_size,
+        keyword_filters,
+        dialog_peers,
+        dialog_load_error,
+    )
+    .await
 }
 
 /// Scrape configured channels for a user using their stored MTProto session.
@@ -190,25 +229,48 @@ async fn scrape_channel(
     min_size: u64,
     keyword_filters: &KeywordFilterCache,
     dialog_peers: &HashMap<i64, grammers_session::types::PeerRef>,
-) -> Vec<ScrapedTelegramStream> {
+    dialog_load_error: Option<&str>,
+) -> ChannelScrapeOutcome {
     let Some(channel_ref) = telegram_channel_id::parse_channel_ref(channel) else {
         tracing::debug!("telegram: invalid channel identifier {channel}");
-        return vec![];
+        return ChannelScrapeOutcome {
+            streams: vec![],
+            channel_title: None,
+            error: Some(format!("invalid channel identifier: {channel}")),
+        };
     };
+    let needs_dialog_peer = matches!(channel_ref, ChannelRef::DialogId(_));
 
     let (peer, peer_ref) =
         match telegram_peer::resolve_channel_ref(client, channel_ref, dialog_peers).await {
             Some(found) => found,
             None => {
                 tracing::debug!("telegram: could not resolve channel {channel}");
-                return vec![];
+                let error = if needs_dialog_peer {
+                    dialog_load_error
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("could not resolve channel {channel}"))
+                } else {
+                    format!("could not resolve channel {channel}")
+                };
+                return ChannelScrapeOutcome {
+                    streams: vec![],
+                    channel_title: None,
+                    error: Some(error),
+                };
             }
         };
+
+    let channel_title = telegram_peer::peer_display_name(&peer);
 
     // Extract chat metadata for embedding into results
     let Some(chat_id) = peer.id().bot_api_dialog_id() else {
         tracing::debug!("telegram: peer has no bot API dialog id for {channel}");
-        return vec![];
+        return ChannelScrapeOutcome {
+            streams: vec![],
+            channel_title,
+            error: Some(format!("peer has no bot API dialog id for {channel}")),
+        };
     };
     let chat_username: Option<String> = match &peer {
         grammers_client::peer::Peer::Channel(c) => c.username().map(str::to_string),
@@ -223,6 +285,7 @@ async fn scrape_channel(
     }
 
     let mut results = Vec::new();
+    let mut iter_error = None;
     loop {
         let next = iter.next().await;
         match next {
@@ -243,13 +306,19 @@ async fn scrape_channel(
             }
             Ok(None) => break,
             Err(e) => {
-                tracing::warn!("telegram: iter_messages {channel}: {e}");
+                let err_msg = e.to_string();
+                tracing::warn!("telegram: iter_messages {channel}: {err_msg}");
+                iter_error = Some(err_msg);
                 break;
             }
         }
     }
 
-    results
+    ChannelScrapeOutcome {
+        streams: results,
+        channel_title,
+        error: iter_error,
+    }
 }
 
 // ─── Message processing ───────────────────────────────────────────────────────

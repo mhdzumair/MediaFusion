@@ -26,7 +26,9 @@ struct ScrapeMetrics {
 #[derive(Clone)]
 struct ChannelScrapeResult {
     channel: String,
+    channel_name: Option<String>,
     metrics: ScrapeMetrics,
+    scrape_error: Option<String>,
 }
 
 #[async_trait]
@@ -85,16 +87,19 @@ impl JobHandler for TelegramBgScraper {
                 if ctx.is_cancelled() {
                     return Err(JobError::Cancelled);
                 }
-                let metrics =
-                    scrape_and_persist_channel(&ctx, &client, channel, message_limit, min_size)
-                        .await;
-                totals.imported += metrics.imported;
-                totals.skipped += metrics.skipped;
-                totals.errors += metrics.errors;
-                channel_results.push(ChannelScrapeResult {
-                    channel: channel.clone(),
-                    metrics,
-                });
+                let result = scrape_and_persist_channel(
+                    &ctx,
+                    &client,
+                    target.user_id,
+                    channel,
+                    message_limit,
+                    min_size,
+                )
+                .await;
+                totals.imported += result.metrics.imported;
+                totals.skipped += result.metrics.skipped;
+                totals.errors += result.metrics.errors;
+                channel_results.push(result);
             }
 
             total_streams += totals.imported;
@@ -245,15 +250,19 @@ async fn run_user_scrape(
         }
 
         let channel_limit = parse_channel_message_limit(args, Some(channel));
-        let metrics =
-            scrape_and_persist_channel(ctx, &client, channel, channel_limit, min_size).await;
-        totals.imported += metrics.imported;
-        totals.skipped += metrics.skipped;
-        totals.errors += metrics.errors;
-        channel_results.push(ChannelScrapeResult {
-            channel: channel.clone(),
-            metrics,
-        });
+        let result = scrape_and_persist_channel(
+            ctx,
+            &client,
+            mediafusion_user_id,
+            channel,
+            channel_limit,
+            min_size,
+        )
+        .await;
+        totals.imported += result.metrics.imported;
+        totals.skipped += result.metrics.skipped;
+        totals.errors += result.metrics.errors;
+        channel_results.push(result);
     }
 
     send_scrape_notifications(
@@ -351,10 +360,20 @@ async fn send_scrape_notifications(
         "Scheduled"
     };
     let admin_summary = format!(
-        "📡 *Telegram Scrape Completed*\n\n\
+        "{status} *Telegram Scrape {status_noun}*\n\n\
          Trigger: {trigger}\n\
          Depth: {limit_label}\n\
          Channels: {channel_count}\n\n{summary_body}",
+        status = if scrape_had_failures(totals, channel_results) {
+            "❌"
+        } else {
+            "✅"
+        },
+        status_noun = if scrape_had_failures(totals, channel_results) {
+            "Failed"
+        } else {
+            "Completed"
+        },
         channel_count = channel_results.len(),
         summary_body = scrape_summary_body(channel_results, totals)
     );
@@ -381,16 +400,36 @@ fn build_scrape_summary(
 ) -> String {
     let _ = (telegram_user_id, mediafusion_user_id);
     let body = scrape_summary_body(channel_results, totals);
+    let failed = scrape_had_failures(totals, channel_results);
+    let header = if failed {
+        "❌ *Scrape Failed*"
+    } else {
+        "✅ *Scrape Complete*"
+    };
+
     if channel_results.len() == 1 {
+        let result = &channel_results[0];
         format!(
-            "✅ *Scrape Complete*\n\nChannel: `{}`\nDepth: {limit_label}\n\n{body}",
-            channel_results[0].channel
+            "{header}\n\nChannel: {channel_label}\nDepth: {limit_label}\n\n{body}",
+            channel_label = channel_display_label(result)
         )
     } else {
         format!(
-            "✅ *Scrape Complete*\n\nChannels scraped: {}\nDepth: {limit_label}\n\n{body}",
+            "{header}\n\nChannels scraped: {}\nDepth: {limit_label}\n\n{body}",
             channel_results.len()
         )
+    }
+}
+
+fn scrape_had_failures(totals: &ScrapeMetrics, channel_results: &[ChannelScrapeResult]) -> bool {
+    totals.errors > 0 || channel_results.iter().any(|r| r.scrape_error.is_some())
+}
+
+fn channel_display_label(result: &ChannelScrapeResult) -> String {
+    match result.channel_name.as_deref() {
+        Some(name) if name != result.channel => format!("*{name}* (`{}`)", result.channel),
+        Some(name) => format!("*{name}*"),
+        None => format!("`{}`", result.channel),
     }
 }
 
@@ -400,16 +439,24 @@ fn scrape_summary_body(channel_results: &[ChannelScrapeResult], totals: &ScrapeM
         totals.imported, totals.skipped, totals.errors
     )];
 
-    if channel_results.len() > 1 {
+    if channel_results.len() == 1 {
+        if let Some(error) = &channel_results[0].scrape_error {
+            lines.push(format!("\n⚠️ *Error:* `{error}`"));
+        }
+    } else if channel_results.len() > 1 {
         lines.push("\n*Per channel:*".to_string());
         for result in channel_results {
-            lines.push(format!(
-                "• `{}`: {} imported, {} skipped, {} errors",
-                result.channel,
+            let mut line = format!(
+                "• {}: {} imported, {} skipped, {} errors",
+                channel_display_label(result),
                 result.metrics.imported,
                 result.metrics.skipped,
                 result.metrics.errors
-            ));
+            );
+            if let Some(error) = &result.scrape_error {
+                line.push_str(&format!("\n  ⚠️ `{error}`"));
+            }
+            lines.push(line);
         }
     }
 
@@ -419,14 +466,17 @@ fn scrape_summary_body(channel_results: &[ChannelScrapeResult], totals: &ScrapeM
 async fn scrape_and_persist_channel(
     ctx: &JobCtx,
     client: &grammers_client::Client,
+    user_id: UserId,
     channel: &str,
     message_limit: Option<i32>,
     min_size: u64,
-) -> ScrapeMetrics {
+) -> ChannelScrapeResult {
     info!(
         "telegram_bg: scraping channel {channel} (limit={})",
         format_scrape_message_limit(message_limit)
     );
+
+    let configured_name = lookup_configured_channel_name(&ctx.state.pool, user_id, channel).await;
 
     let probe_meta = crate::scrapers::SearchMeta {
         media_id: crate::db::MediaId(0),
@@ -441,10 +491,11 @@ async fn scrape_and_persist_channel(
         .read()
         .map(|g| g.clone())
         .unwrap_or_default();
-    let dialog_peers = crate::services::telegram_peer::load_dialog_peer_map(client).await;
-    let streams = telegram::scrape(
+    let (dialog_peers, dialog_load_error) =
+        crate::services::telegram_peer::load_dialog_peer_map(client).await;
+    let outcome = telegram::scrape_single_channel(
         client,
-        &[channel.to_string()],
+        channel,
         &probe_meta,
         "movie",
         None,
@@ -452,11 +503,24 @@ async fn scrape_and_persist_channel(
         message_limit,
         min_size,
         &kf,
+        &dialog_peers,
+        dialog_load_error.as_deref(),
     )
     .await;
 
-    let cfg = &ctx.state.config;
+    let channel_name = outcome
+        .channel_title
+        .or(configured_name)
+        .filter(|name| !name.is_empty());
+
     let mut metrics = ScrapeMetrics::default();
+    if let Some(error) = &outcome.error {
+        metrics.errors += 1;
+        warn!("telegram_bg: channel {channel} scrape failed: {error}");
+    }
+
+    let streams = outcome.streams;
+    let cfg = &ctx.state.config;
 
     for stream in &streams {
         let title = stream
@@ -529,14 +593,40 @@ async fn scrape_and_persist_channel(
         }
     }
 
-    info!(
-        "telegram_bg: channel {channel} — imported {}/skipped {}/errors {} (of {} candidates)",
-        metrics.imported,
-        metrics.skipped,
-        metrics.errors,
-        streams.len()
-    );
-    metrics
+    if outcome.error.is_some() {
+        info!(
+            "telegram_bg: channel {channel} — scrape error (imported {}/skipped {}/errors {})",
+            metrics.imported, metrics.skipped, metrics.errors
+        );
+    } else {
+        info!(
+            "telegram_bg: channel {channel} — imported {}/skipped {}/errors {} (of {} candidates)",
+            metrics.imported,
+            metrics.skipped,
+            metrics.errors,
+            streams.len()
+        );
+    }
+
+    ChannelScrapeResult {
+        channel: channel.to_string(),
+        channel_name,
+        metrics,
+        scrape_error: outcome.error,
+    }
+}
+
+async fn lookup_configured_channel_name(
+    pool: &sqlx::PgPool,
+    user_id: UserId,
+    channel: &str,
+) -> Option<String> {
+    crate::db::telegram_channels::list_user_channels(pool, user_id)
+        .await
+        .into_iter()
+        .find(|c| c.id == channel)
+        .map(|c| c.name)
+        .filter(|name| !name.is_empty())
 }
 
 async fn telegram_stream_already_indexed(

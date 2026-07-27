@@ -29,7 +29,7 @@ pub async fn invalidate_dialog_peer_cache(user_id: UserId) {
     dialog_peer_cache().invalidate(&user_id).await;
 }
 
-pub async fn load_dialog_peer_map(client: &Client) -> HashMap<i64, PeerRef> {
+pub async fn load_dialog_peer_map(client: &Client) -> (HashMap<i64, PeerRef>, Option<String>) {
     let mut map = HashMap::new();
     let mut iter = client.iter_dialogs();
     loop {
@@ -42,12 +42,13 @@ pub async fn load_dialog_peer_map(client: &Client) -> HashMap<i64, PeerRef> {
             }
             Ok(None) => break,
             Err(e) => {
-                tracing::warn!("telegram: load dialog peers: {e}");
-                break;
+                let err_msg = e.to_string();
+                tracing::warn!("telegram: load dialog peers: {err_msg}");
+                return (map, Some(err_msg));
             }
         }
     }
-    map
+    (map, None)
 }
 
 pub async fn store_dialog_peer_map(user_id: UserId, map: HashMap<i64, PeerRef>) {
@@ -58,11 +59,26 @@ pub async fn cached_dialog_peer_map(user_id: UserId, client: &Client) -> HashMap
     if let Some(cached) = dialog_peer_cache().get(&user_id).await {
         return (*cached).clone();
     }
-    let map = load_dialog_peer_map(client).await;
+    let (map, _) = load_dialog_peer_map(client).await;
     dialog_peer_cache()
         .insert(user_id, Arc::new(map.clone()))
         .await;
     map
+}
+
+pub fn peer_display_name(peer: &grammers_client::peer::Peer) -> Option<String> {
+    use grammers_client::peer::Peer;
+    match peer {
+        Peer::Channel(c) => {
+            let title = c.title();
+            (!title.is_empty()).then(|| title.to_string())
+        }
+        Peer::Group(g) => g.title().filter(|t| !t.is_empty()).map(str::to_string),
+        Peer::User(u) => {
+            let name = u.full_name();
+            (!name.is_empty()).then(|| name)
+        }
+    }
 }
 
 pub async fn resolve_channel_peer(

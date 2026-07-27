@@ -95,10 +95,15 @@ pub async fn start_session_login(
         return unauthorized();
     };
 
+    let user_id = UserId(user_id);
+    state.telegram_clients.invalidate(user_id).await;
+    crate::services::telegram_peer::invalidate_dialog_peer_cache(user_id).await;
+    state.telegram_pending_logins.clear(user_id).await;
+
     match start_login(
         &state.telegram_pending_logins,
         &state.config,
-        UserId(user_id),
+        user_id,
         &body.phone,
     )
     .await
@@ -140,8 +145,10 @@ pub async fn verify_session_code(
         Ok(LoginVerifyResult::Completed {
             telegram_account_id,
         }) => {
-            state.telegram_clients.invalidate(UserId(user_id)).await;
-            crate::bot::notify_session_connected(&state, UserId(user_id), telegram_account_id)
+            let uid = UserId(user_id);
+            state.telegram_clients.invalidate(uid).await;
+            crate::services::telegram_peer::invalidate_dialog_peer_cache(uid).await;
+            crate::bot::notify_session_connected(&state, uid, telegram_account_id)
                 .await;
             (
                 StatusCode::OK,
@@ -188,8 +195,10 @@ pub async fn verify_session_password(
         Ok(LoginPasswordResult::Completed {
             telegram_account_id,
         }) => {
-            state.telegram_clients.invalidate(UserId(user_id)).await;
-            crate::bot::notify_session_connected(&state, UserId(user_id), telegram_account_id)
+            let uid = UserId(user_id);
+            state.telegram_clients.invalidate(uid).await;
+            crate::services::telegram_peer::invalidate_dialog_peer_cache(uid).await;
+            crate::bot::notify_session_connected(&state, uid, telegram_account_id)
                 .await;
             (
                 StatusCode::OK,

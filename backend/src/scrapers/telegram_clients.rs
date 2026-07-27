@@ -18,7 +18,16 @@ use crate::{
 
 struct CachedClient {
     client: Arc<Client>,
-    _runner: JoinHandle<()>,
+    runner: JoinHandle<()>,
+}
+
+fn shutdown_client(client: &Client, runner: &JoinHandle<()>) {
+    client.disconnect();
+    runner.abort();
+}
+
+pub fn is_auth_key_duplicated(err: &str) -> bool {
+    err.contains("AUTH_KEY_DUPLICATED")
 }
 
 pub struct TelegramClientPool {
@@ -66,6 +75,9 @@ impl TelegramClientPool {
     }
 
     pub async fn invalidate(&self, user_id: UserId) {
+        if let Some(entry) = self.cache.get(&user_id).await {
+            shutdown_client(&entry.client, &entry.runner);
+        }
         self.cache.invalidate(&user_id).await;
     }
 }
@@ -86,6 +98,6 @@ async fn build_client(
     let _ = api_hash;
     Ok(Arc::new(CachedClient {
         client: Arc::new(client),
-        _runner: runner_task,
+        runner: runner_task,
     }))
 }

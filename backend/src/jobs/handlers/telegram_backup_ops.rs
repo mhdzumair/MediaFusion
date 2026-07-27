@@ -86,7 +86,7 @@ async fn run_backup_store_batch(
         return Ok((BackupBatchMetrics::default(), after_id));
     }
 
-    let dialog_peers = telegram_peer::load_dialog_peer_map(client).await;
+    let (dialog_peers, _) = telegram_peer::load_dialog_peer_map(client).await;
     let mut metrics = BackupBatchMetrics::default();
     let mut last_id = after_id;
 
@@ -216,7 +216,7 @@ impl JobHandler for TelegramBackupRestore {
             .await
             .map_err(JobError::other)?;
 
-        let dialog_peers = telegram_peer::load_dialog_peer_map(&client).await;
+        let (dialog_peers, _) = telegram_peer::load_dialog_peer_map(&client).await;
         let (_, backup_peer_ref) = telegram_peer::resolve_channel_peer(
             &client,
             backup_channel,
