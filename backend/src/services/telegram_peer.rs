@@ -76,7 +76,7 @@ pub fn peer_display_name(peer: &grammers_client::peer::Peer) -> Option<String> {
         Peer::Group(g) => g.title().filter(|t| !t.is_empty()).map(str::to_string),
         Peer::User(u) => {
             let name = u.full_name();
-            (!name.is_empty()).then(|| name)
+            (!name.is_empty()).then_some(name)
         }
     }
 }
