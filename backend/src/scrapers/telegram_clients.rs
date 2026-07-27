@@ -1,4 +1,4 @@
-//! Per-user Telegram MTProto client pool.
+//! Per-user Telegram MTProto client pool and shared bot MTProto client.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,6 +7,8 @@ use grammers_client::Client;
 use grammers_client::sender::SenderPool;
 use grammers_session::storages::MemorySession;
 use moka::future::Cache;
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -29,6 +31,8 @@ fn shutdown_client(client: &Client, runner: &JoinHandle<()>) {
 pub fn is_auth_key_duplicated(err: &str) -> bool {
     err.contains("AUTH_KEY_DUPLICATED")
 }
+
+static BOT_CLIENT: OnceLock<Mutex<Option<Arc<CachedClient>>>> = OnceLock::new();
 
 pub struct TelegramClientPool {
     cache: Cache<UserId, Arc<CachedClient>>,
@@ -80,6 +84,54 @@ impl TelegramClientPool {
         }
         self.cache.invalidate(&user_id).await;
     }
+
+    /// MTProto client signed in with `TELEGRAM_BOT_TOKEN` for backup-channel operations.
+    pub async fn get_bot_client(&self) -> Option<Arc<Client>> {
+        if !self.api_configured() {
+            return None;
+        }
+        let bot_token = self.config.telegram_bot_token.as_deref()?;
+        let api_id = self.config.telegram_api_id?;
+        let api_hash = self.config.telegram_api_hash.as_deref()?;
+
+        let slot = BOT_CLIENT.get_or_init(|| Mutex::new(None));
+        let mut guard = slot.lock().await;
+        if let Some(cached) = guard.as_ref() {
+            return Some(Arc::clone(&cached.client));
+        }
+
+        match build_bot_client(api_id, api_hash, bot_token).await {
+            Ok(cached) => {
+                let client = Arc::clone(&cached.client);
+                *guard = Some(cached);
+                Some(client)
+            }
+            Err(e) => {
+                tracing::warn!("telegram: bot MTProto client init failed: {e}");
+                None
+            }
+        }
+    }
+}
+
+async fn build_bot_client(
+    api_id: i32,
+    api_hash: &str,
+    bot_token: &str,
+) -> Result<Arc<CachedClient>, Box<dyn std::error::Error + Send + Sync>> {
+    let session = Arc::new(MemorySession::default());
+    let pool = SenderPool::new(Arc::clone(&session) as Arc<_>, api_id);
+    let runner = pool.runner;
+    let handle = pool.handle;
+    let runner_task = tokio::spawn(async move {
+        runner.run().await;
+    });
+    let client = Client::new(handle);
+    client.bot_sign_in(bot_token, api_hash).await?;
+    Ok(Arc::new(CachedClient {
+        client: Arc::new(client),
+        runner: runner_task,
+    }))
 }
 
 async fn build_client(

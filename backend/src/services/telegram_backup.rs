@@ -88,6 +88,47 @@ pub fn parse_backup_caption_filename(caption: &str) -> Option<String> {
     })
 }
 
+fn bot_api_chat_id(channel: &str) -> Option<serde_json::Value> {
+    match telegram_channel_id::parse_channel_ref(channel)? {
+        ChannelRef::DialogId(id) => Some(serde_json::json!(id)),
+        ChannelRef::Username(username) => Some(serde_json::json!(format!("@{username}"))),
+    }
+}
+
+async fn copy_message_to_backup_via_bot(
+    api: &BotApi,
+    backup_channel: &str,
+    source_chat_id: &str,
+    message_id: i32,
+    file_name: &str,
+    title: &str,
+) -> Option<BackupCopyResult> {
+    let backup_chat_id = bot_api_chat_id(backup_channel)?;
+    let source_chat_id = bot_api_chat_id(source_chat_id)?;
+    let caption = format_backup_caption(file_name, title);
+
+    let copied = api
+        .copy_message_with_caption_json(
+            backup_chat_id.clone(),
+            source_chat_id,
+            i64::from(message_id),
+            Some(&caption),
+        )
+        .await
+        .ok()?;
+
+    let backup_message_id = copied
+        .get("message_id")
+        .and_then(|v| v.as_i64())
+        .map(|id| id as i32)?;
+
+    Some(BackupCopyResult {
+        backup_chat_id: backup_channel.to_string(),
+        backup_message_id,
+        file_id: extract_bot_file_id(&copied),
+    })
+}
+
 async fn copy_message_to_backup(
     client: &Client,
     dialog_peers: &HashMap<i64, PeerRef>,
@@ -209,8 +250,8 @@ pub async fn enrich_scraped_stream(
 
 pub async fn store_stream_to_backup(
     state: &AppState,
-    client: &Client,
-    dialog_peers: &HashMap<i64, PeerRef>,
+    user_client: Option<&Client>,
+    user_dialog_peers: Option<&HashMap<i64, PeerRef>>,
     row: &TelegramStreamBackupRow,
     capture_file_id: bool,
 ) -> Result<BackupCopyResult, String> {
@@ -240,8 +281,20 @@ pub async fn store_stream_to_backup(
             backup_message_id: row.message_id,
             file_id: row.file_id.clone(),
         }
-    } else {
-        copy_message_to_backup(
+    } else if let Ok(api) = BotApi::from_state(state)
+        && let Some(copied) = copy_message_to_backup_via_bot(
+            &api,
+            backup_channel,
+            &row.chat_id,
+            row.message_id,
+            &row.file_name,
+            title,
+        )
+        .await
+    {
+        copied
+    } else if let (Some(client), Some(dialog_peers)) = (user_client, user_dialog_peers)
+        && let Some(copied) = copy_message_to_backup(
             client,
             dialog_peers,
             backup_channel,
@@ -251,12 +304,13 @@ pub async fn store_stream_to_backup(
             title,
         )
         .await
-        .ok_or_else(|| {
-            format!(
-                "failed to copy stream {} from {}:{} — source message not accessible to scraping session",
-                row.id, row.chat_id, row.message_id
-            )
-        })?
+    {
+        copied
+    } else {
+        return Err(format!(
+            "failed to copy stream {} from {}:{} — bot must be admin in source and backup channels, or a user scraping session with channel access is required",
+            row.id, row.chat_id, row.message_id
+        ));
     };
 
     if capture_file_id && let Ok(api) = BotApi::from_state(state) {
@@ -326,6 +380,16 @@ pub async fn restore_stream_from_backup_message(
     .map_err(|e| e.to_string())?;
 
     Ok(Some(row.id))
+}
+
+pub async fn resolve_bot_mtproto_client(state: &AppState) -> Result<Arc<Client>, String> {
+    state
+        .telegram_clients
+        .get_bot_client()
+        .await
+        .ok_or_else(|| {
+            "Telegram bot MTProto client unavailable — configure TELEGRAM_BOT_TOKEN, TELEGRAM_API_ID, and TELEGRAM_API_HASH".to_string()
+        })
 }
 
 pub async fn resolve_mtproto_client(

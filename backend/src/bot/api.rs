@@ -193,16 +193,43 @@ impl BotApi {
         from_chat_id: i64,
         message_id: i64,
     ) -> Result<Value, BotApiError> {
-        let data = self
-            .post(
-                "copyMessage",
-                json!({
-                    "chat_id": chat_id,
-                    "from_chat_id": from_chat_id,
-                    "message_id": message_id,
-                }),
-            )
-            .await?;
+        self.copy_message_with_caption(chat_id, from_chat_id, message_id, None)
+            .await
+    }
+
+    pub async fn copy_message_with_caption(
+        &self,
+        chat_id: i64,
+        from_chat_id: i64,
+        message_id: i64,
+        caption: Option<&str>,
+    ) -> Result<Value, BotApiError> {
+        self.copy_message_with_caption_json(
+            json!(chat_id),
+            json!(from_chat_id),
+            message_id,
+            caption,
+        )
+        .await
+    }
+
+    pub async fn copy_message_with_caption_json(
+        &self,
+        chat_id: Value,
+        from_chat_id: Value,
+        message_id: i64,
+        caption: Option<&str>,
+    ) -> Result<Value, BotApiError> {
+        let mut body = json!({
+            "chat_id": chat_id,
+            "from_chat_id": from_chat_id,
+            "message_id": message_id,
+        });
+        if let Some(text) = caption {
+            body["caption"] = json!(text);
+            body["parse_mode"] = json!("Markdown");
+        }
+        let data = self.post("copyMessage", body).await?;
         data.get("result")
             .cloned()
             .ok_or_else(|| BotApiError::Parse("missing result".into()))
