@@ -1386,7 +1386,9 @@ pub async fn get_telegram_dialog_photo(
         crate::services::telegram_peer::download_channel_photo(&client, &channel_id, &dialog_peers)
             .await;
     if bytes.is_none() {
-        dialog_peers = crate::services::telegram_peer::load_dialog_peer_map(&client).await.0;
+        dialog_peers = crate::services::telegram_peer::load_dialog_peer_map(&client)
+            .await
+            .0;
         crate::services::telegram_peer::store_dialog_peer_map(
             UserId(user_id),
             dialog_peers.clone(),

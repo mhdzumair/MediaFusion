@@ -168,10 +168,7 @@ async fn fetch_password_data(client: &Client) -> Result<tl::types::account::Pass
         .map(Into::into)
 }
 
-async fn spawn_client(
-    api_id: i32,
-    session_data: SessionData,
-) -> EphemeralClient {
+async fn spawn_client(api_id: i32, session_data: SessionData) -> EphemeralClient {
     let session = Arc::new(MemorySession::from(session_data));
     let pool = SenderPool::new(Arc::clone(&session) as Arc<_>, api_id);
     let runner = pool.runner;
@@ -215,7 +212,9 @@ impl Drop for EphemeralClient {
 }
 
 async fn snapshot_session(session: &MemorySession) -> Result<SessionSnapshot, String> {
-    let home_dc = session.home_dc_id().map_err(|e| format!("session home_dc: {e}"))?;
+    let home_dc = session
+        .home_dc_id()
+        .map_err(|e| format!("session home_dc: {e}"))?;
     let updates_state = session
         .updates_state()
         .await
@@ -268,7 +267,8 @@ async fn save_pending(
     user_id: UserId,
     pending: &RedisPendingLogin,
 ) -> Result<(), String> {
-    let json = serde_json::to_string(pending).map_err(|e| format!("serialize pending login: {e}"))?;
+    let json =
+        serde_json::to_string(pending).map_err(|e| format!("serialize pending login: {e}"))?;
     redis
         .set::<(), _, _>(
             &pending_login_key(user_id.0),
@@ -389,15 +389,12 @@ pub async fn verify_code(
     {
         Ok(user) => {
             pending.clear(user_id).await;
-            let account_id = persist_authenticated_session(
-                pool,
-                config,
-                user_id,
-                ephemeral.session(),
-                &user,
-            )
-            .await?;
-            Ok(LoginVerifyResult::Completed { telegram_account_id: account_id })
+            let account_id =
+                persist_authenticated_session(pool, config, user_id, ephemeral.session(), &user)
+                    .await?;
+            Ok(LoginVerifyResult::Completed {
+                telegram_account_id: account_id,
+            })
         }
         Err(SignInError::PasswordRequired(password_token)) => {
             let hint = password_token.hint().map(str::to_string);
@@ -465,14 +462,9 @@ pub async fn verify_password(
     {
         Ok(user) => {
             pending.clear(user_id).await;
-            let account_id = persist_authenticated_session(
-                pool,
-                config,
-                user_id,
-                ephemeral.session(),
-                &user,
-            )
-            .await?;
+            let account_id =
+                persist_authenticated_session(pool, config, user_id, ephemeral.session(), &user)
+                    .await?;
             Ok(LoginPasswordResult::Completed {
                 telegram_account_id: account_id,
             })

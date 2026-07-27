@@ -148,8 +148,7 @@ pub async fn verify_session_code(
             let uid = UserId(user_id);
             state.telegram_clients.invalidate(uid).await;
             crate::services::telegram_peer::invalidate_dialog_peer_cache(uid).await;
-            crate::bot::notify_session_connected(&state, uid, telegram_account_id)
-                .await;
+            crate::bot::notify_session_connected(&state, uid, telegram_account_id).await;
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -198,8 +197,7 @@ pub async fn verify_session_password(
             let uid = UserId(user_id);
             state.telegram_clients.invalidate(uid).await;
             crate::services::telegram_peer::invalidate_dialog_peer_cache(uid).await;
-            crate::bot::notify_session_connected(&state, uid, telegram_account_id)
-                .await;
+            crate::bot::notify_session_connected(&state, uid, telegram_account_id).await;
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
