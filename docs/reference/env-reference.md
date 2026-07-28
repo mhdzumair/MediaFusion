@@ -112,7 +112,7 @@ These 4 variables must be set before MediaFusion will start:
 
 ---
 
-## HTTP Client & Egress
+## HTTP Client & Egress {#http-client--egress}
 
 | Variable | Default | Description |
 |---|---|---|

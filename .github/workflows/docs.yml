@@ -11,14 +11,22 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Checkout main
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -32,12 +40,38 @@ jobs:
       - name: Build docs
         run: mkdocs build
 
-      # Deploy to the /docs/ subdirectory of gh-pages, leaving the Kodi addon
-      # repository files at the root untouched.
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      # Fetch the existing gh-pages branch so Kodi addon files at the root are
+      # preserved when we update only the /docs/ subdirectory.
+      - name: Fetch existing GitHub Pages content
+        uses: actions/checkout@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          destination_dir: docs
-          enable_jekyll: false
+          ref: gh-pages
+          path: pages
+
+      - name: Merge docs into Pages site
+        run: |
+          rm -rf pages/docs
+          mkdir -p pages/docs
+          cp -r site/. pages/docs/
+          touch pages/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+      # peaceiris/actions-gh-pages only pushes to the gh-pages branch; it does
+      # not publish when Pages build_type is "workflow". deploy-pages publishes
+      # the artifact to the live site.
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Update gh-pages branch
+        working-directory: pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "deploy docs: ${{ github.sha }}"
+          git push origin HEAD:gh-pages

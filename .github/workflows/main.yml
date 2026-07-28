@@ -350,6 +350,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout
@@ -380,14 +388,43 @@ jobs:
             fi
           done
 
+      - name: Fetch existing GitHub Pages content
+        if: "!github.event.release.prerelease"
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: gh-pages
+          path: pages
+
+      - name: Merge Kodi addon into Pages site
+        if: "!github.event.release.prerelease"
+        run: |
+          # Replace Kodi repo files entirely so old release zips are not kept.
+          rm -f pages/repository.mediafusion-*.zip
+          rm -rf pages/plugin.video.mediafusion pages/repository.mediafusion
+          rm -f pages/addons.xml pages/addons.xml.md5 pages/index.html
+          rsync -a clients/kodi/dist/ pages/
+          touch pages/.nojekyll
+
+      - name: Upload Pages artifact
+        if: "!github.event.release.prerelease"
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: pages
+
       - name: Deploy to GitHub Pages
         if: "!github.event.release.prerelease"
-        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: clients/kodi/dist
-          enable_jekyll: false
-          keep_files: true
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+      - name: Update gh-pages branch
+        if: "!github.event.release.prerelease"
+        working-directory: pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "deploy: ${{ github.sha }}"
+          git push origin HEAD:gh-pages
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

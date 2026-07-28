@@ -91,6 +91,7 @@ nav:
     - Core Settings: configuration/core.md
     - Database & Redis: configuration/database.md
     - Streaming Providers: configuration/streaming-providers.md
+    - Stream Formatting: configuration/stream-formatting.md
     - Content Sources: configuration/content-sources.md
     - MediaFlow Proxy: configuration/mediaflow.md
     - Security: configuration/security.md

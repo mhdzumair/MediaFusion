@@ -159,7 +159,7 @@ Now open [https://mediafusion.local](https://mediafusion.local) in your browser.
 
 ---
 
-## TRAWL (optional — Cloudflare / JS challenge bypass)
+## TRAWL (optional — Cloudflare / JS challenge bypass) {#trawl-optional-cloudflare--js-challenge-bypass}
 
 Several background scrapers need a real browser to bypass Cloudflare or site-specific JS challenges:
 
