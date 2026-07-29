@@ -94,14 +94,8 @@ async fn run_backup_store_job(
             return Err(JobError::Cancelled);
         }
 
-        let (batch, last_id) = run_backup_store_batch(
-            ctx,
-            args,
-            user_client,
-            user_dialog_peers,
-            after_id,
-        )
-        .await?;
+        let (batch, last_id) =
+            run_backup_store_batch(ctx, args, user_client, user_dialog_peers, after_id).await?;
         if batch.processed == 0 {
             break;
         }
@@ -222,8 +216,7 @@ impl JobHandler for TelegramBackupStore {
         }
 
         let preferred = args.mediafusion_user_id.map(UserId);
-        let session_user =
-            resolve_session_user_id(&ctx.state.pool, preferred).await;
+        let session_user = resolve_session_user_id(&ctx.state.pool, preferred).await;
 
         if let Some(user_id) = session_user {
             let job_result = ctx
@@ -234,13 +227,8 @@ impl JobHandler for TelegramBackupStore {
                     let args = args.clone();
                     async move {
                         let dialog_peers = load_dialog_peers(&client).await;
-                        run_backup_store_job(
-                            ctx,
-                            &args,
-                            Some(client.as_ref()),
-                            Some(&dialog_peers),
-                        )
-                        .await
+                        run_backup_store_job(ctx, &args, Some(client.as_ref()), Some(&dialog_peers))
+                            .await
                     }
                 })
                 .await

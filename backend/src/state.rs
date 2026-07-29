@@ -368,12 +368,11 @@ impl AppState {
             (None, None)
         };
 
-        let telegram_clients = Arc::new(
-            crate::scrapers::telegram_clients::TelegramClientPool::new(
+        let telegram_clients =
+            Arc::new(crate::scrapers::telegram_clients::TelegramClientPool::new(
                 config.clone(),
                 redis.clone(),
-            ),
-        );
+            ));
         let telegram_pending_logins = Arc::new(
             crate::services::telegram_login::PendingLoginStore::new(redis.clone()),
         );

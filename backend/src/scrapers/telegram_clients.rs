@@ -119,10 +119,7 @@ impl TelegramClientPool {
     }
 
     async fn release_mtproto_lock(&self, user_id: UserId) {
-        let _ = self
-            .redis
-            .del::<(), _>(mtproto_lock_key(user_id))
-            .await;
+        let _ = self.redis.del::<(), _>(mtproto_lock_key(user_id)).await;
     }
 
     async fn build_user_client(
@@ -143,8 +140,9 @@ impl TelegramClientPool {
         let row = db::user_telegram_session::get_session(pool, user_id)
             .await
             .ok_or_else(|| "Telegram scraping session is not connected".to_string())?;
-        let session_plain = session_crypto::decrypt_session(&row.encrypted_session, &self.config.secret_key)
-            .ok_or_else(|| "failed to decrypt Telegram session".to_string())?;
+        let session_plain =
+            session_crypto::decrypt_session(&row.encrypted_session, &self.config.secret_key)
+                .ok_or_else(|| "failed to decrypt Telegram session".to_string())?;
         let session_data = telegram_session::parse_session_data(&session_plain)
             .map_err(|_| "invalid Telegram session data".to_string())?;
         if !telegram_session::session_is_authenticated(&session_data) {

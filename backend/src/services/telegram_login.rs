@@ -143,10 +143,10 @@ async fn request_code_hash(
                 Ok(x) => match x {
                     SC::Code(code) => code,
                     SC::Success(_) => {
-                        return Err("unexpected login success before code entry".into())
+                        return Err("unexpected login success before code entry".into());
                     }
                     SC::PaymentRequired(_) => {
-                        return Err("telegram payment required for login".into())
+                        return Err("telegram payment required for login".into());
                     }
                 },
                 Err(e) => return Err(format!("request login code after migrate: {e}")),
