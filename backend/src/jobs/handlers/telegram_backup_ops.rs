@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tracing::info;
 
 use grammers_client::Client;
@@ -17,9 +16,8 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    scrapers::telegram_clients::is_auth_key_duplicated,
     services::telegram_backup::{
-        BackupBatchMetrics, resolve_bot_mtproto_client, resolve_mtproto_client,
+        BackupBatchMetrics, resolve_bot_mtproto_client, resolve_session_user_id,
         restore_stream_from_backup_message, store_stream_to_backup,
     },
     services::telegram_peer,
@@ -29,7 +27,7 @@ pub struct TelegramBackupStore;
 
 pub struct TelegramBackupRestore;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct TelegramBackupStoreArgs {
     #[serde(default)]
     pub mediafusion_user_id: Option<i32>,
@@ -77,35 +75,59 @@ fn default_capture_file_id() -> bool {
     true
 }
 
-async fn load_user_session(
-    ctx: &JobCtx,
-    preferred: Option<UserId>,
-) -> (Option<Arc<Client>>, Option<HashMap<i64, PeerRef>>) {
-    for attempt in 0..2 {
-        let session = resolve_mtproto_client(&ctx.state, preferred).await.ok();
-        let Some((user_id, client)) = session else {
-            return (None, None);
-        };
+async fn load_dialog_peers(client: &Client) -> HashMap<i64, PeerRef> {
+    telegram_peer::load_dialog_peer_map(client).await.0
+}
 
-        let (dialog_peers, dialog_error) =
-            telegram_peer::load_dialog_peer_map(client.as_ref()).await;
-        if let Some(err) = dialog_error.as_deref()
-            && attempt == 0
-            && is_auth_key_duplicated(err)
-        {
-            tracing::warn!(
-                "telegram_backup_store: AUTH_KEY_DUPLICATED for user {} — recycling client",
-                user_id.0
-            );
-            ctx.state.telegram_clients.invalidate(user_id).await;
-            telegram_peer::invalidate_dialog_peer_cache(user_id).await;
-            continue;
+async fn run_backup_store_job(
+    ctx: &JobCtx,
+    args: &TelegramBackupStoreArgs,
+    user_client: Option<&Client>,
+    user_dialog_peers: Option<&HashMap<i64, PeerRef>>,
+) -> Result<(), JobError> {
+    let mut after_id = args.after_id;
+    let mut totals = BackupBatchMetrics::default();
+    let mut batches_done: i64 = 0;
+
+    loop {
+        if ctx.is_cancelled() {
+            return Err(JobError::Cancelled);
         }
 
-        return (Some(client), Some(dialog_peers));
+        let (batch, last_id) = run_backup_store_batch(
+            ctx,
+            args,
+            user_client,
+            user_dialog_peers,
+            after_id,
+        )
+        .await?;
+        if batch.processed == 0 {
+            break;
+        }
+
+        totals.processed += batch.processed;
+        totals.stored += batch.stored;
+        totals.skipped += batch.skipped;
+        totals.errors += batch.errors;
+        after_id = last_id;
+        batches_done += 1;
+
+        if !args.continuous {
+            break;
+        }
+        if let Some(max) = args.max_batches
+            && batches_done >= max
+        {
+            break;
+        }
     }
 
-    (None, None)
+    info!(
+        "telegram_backup_store: processed {} stored {} skipped {} errors {} (last_id={})",
+        totals.processed, totals.stored, totals.skipped, totals.errors, after_id
+    );
+    Ok(())
 }
 
 async fn run_backup_store_batch(
@@ -200,50 +222,34 @@ impl JobHandler for TelegramBackupStore {
         }
 
         let preferred = args.mediafusion_user_id.map(UserId);
-        let (user_client, user_dialog_peers) = load_user_session(&ctx, preferred).await;
+        let session_user =
+            resolve_session_user_id(&ctx.state.pool, preferred).await;
 
-        let mut after_id = args.after_id;
-        let mut totals = BackupBatchMetrics::default();
-        let mut batches_done: i64 = 0;
-
-        loop {
-            if ctx.is_cancelled() {
-                return Err(JobError::Cancelled);
-            }
-
-            let (batch, last_id) = run_backup_store_batch(
-                &ctx,
-                &args,
-                user_client.as_deref(),
-                user_dialog_peers.as_ref(),
-                after_id,
-            )
-            .await?;
-            if batch.processed == 0 {
-                break;
-            }
-
-            totals.processed += batch.processed;
-            totals.stored += batch.stored;
-            totals.skipped += batch.skipped;
-            totals.errors += batch.errors;
-            after_id = last_id;
-            batches_done += 1;
-
-            if !args.continuous {
-                break;
-            }
-            if let Some(max) = args.max_batches
-                && batches_done >= max
-            {
-                break;
-            }
+        if let Some(user_id) = session_user {
+            let job_result = ctx
+                .state
+                .telegram_clients
+                .with_user_client(&ctx.state.pool, user_id, |client| {
+                    let ctx = &ctx;
+                    let args = args.clone();
+                    async move {
+                        let dialog_peers = load_dialog_peers(&client).await;
+                        run_backup_store_job(
+                            ctx,
+                            &args,
+                            Some(client.as_ref()),
+                            Some(&dialog_peers),
+                        )
+                        .await
+                    }
+                })
+                .await
+                .map_err(JobError::other)?;
+            job_result?;
+        } else {
+            run_backup_store_job(&ctx, &args, None, None).await?;
         }
 
-        info!(
-            "telegram_backup_store: processed {} stored {} skipped {} errors {} (last_id={})",
-            totals.processed, totals.stored, totals.skipped, totals.errors, after_id
-        );
         Ok(())
     }
 }

@@ -1,12 +1,16 @@
-//! Per-user Telegram MTProto client pool and shared bot MTProto client.
+//! Per-user Telegram MTProto clients and shared bot MTProto client.
+//!
+//! User sessions use a Redis lock plus connect-use-disconnect per operation so multiple API
+//! pods never hold the same auth key open simultaneously (Telegram returns AUTH_KEY_DUPLICATED).
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use fred::prelude::{Expiration, KeysInterface, SetOptions};
 use grammers_client::Client;
 use grammers_client::sender::SenderPool;
 use grammers_session::storages::MemorySession;
-use moka::future::Cache;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -32,57 +36,126 @@ pub fn is_auth_key_duplicated(err: &str) -> bool {
     err.contains("AUTH_KEY_DUPLICATED")
 }
 
+const MTPROTO_LOCK_TTL_SECS: i64 = 900;
+const MTPROTO_LOCK_WAIT: Duration = Duration::from_millis(200);
+const MTPROTO_LOCK_ATTEMPTS: usize = 25;
+
+fn mtproto_lock_key(user_id: UserId) -> String {
+    format!("telegram:mtproto_lock:{}", user_id.0)
+}
+
 static BOT_CLIENT: OnceLock<Mutex<Option<Arc<CachedClient>>>> = OnceLock::new();
 
 pub struct TelegramClientPool {
-    cache: Cache<UserId, Arc<CachedClient>>,
     config: AppConfig,
+    redis: fred::clients::Client,
 }
 
 impl TelegramClientPool {
-    pub fn new(config: AppConfig) -> Self {
-        let cache = Cache::builder()
-            .max_capacity(64)
-            .time_to_live(Duration::from_secs(30 * 60))
-            .build();
-        Self { cache, config }
+    pub fn new(config: AppConfig, redis: fred::clients::Client) -> Self {
+        Self { config, redis }
     }
 
     pub fn api_configured(&self) -> bool {
         self.config.telegram_api_id.is_some() && self.config.telegram_api_hash.is_some()
     }
 
-    pub async fn get_client(&self, pool: &sqlx::PgPool, user_id: UserId) -> Option<Arc<Client>> {
-        if let Some(entry) = self.cache.get(&user_id).await {
-            return Some(Arc::clone(&entry.client));
+    /// Run `f` with a leased user MTProto client (Redis lock + disconnect on completion).
+    pub async fn with_user_client<T, F, Fut>(
+        &self,
+        pool: &sqlx::PgPool,
+        user_id: UserId,
+        f: F,
+    ) -> Result<T, String>
+    where
+        F: FnOnce(Arc<Client>) -> Fut,
+        Fut: Future<Output = T>,
+    {
+        if !self.acquire_mtproto_lock(user_id).await {
+            return Err(
+                "Telegram session is busy on another request or server node — try again shortly"
+                    .into(),
+            );
         }
 
-        let api_id = self.config.telegram_api_id?;
-        let api_hash = self.config.telegram_api_hash.as_deref()?;
-
-        let row = db::user_telegram_session::get_session(pool, user_id).await?;
-        let session_plain =
-            session_crypto::decrypt_session(&row.encrypted_session, &self.config.secret_key)?;
-        let session_data = telegram_session::parse_session_data(&session_plain).ok()?;
-        if !telegram_session::session_is_authenticated(&session_data) {
-            tracing::warn!("telegram: user {user_id} session is not authenticated");
-            return None;
+        let outcome = async {
+            let cached = self.build_user_client(pool, user_id).await?;
+            let output = f(Arc::clone(&cached.client)).await;
+            shutdown_client(&cached.client, &cached.runner);
+            Ok(output)
         }
+        .await;
 
-        let client = build_client(api_id, api_hash, session_data).await.ok()?;
-        self.cache.insert(user_id, client).await;
-        db::user_telegram_session::touch_last_used(pool, user_id).await;
-        self.cache
-            .get(&user_id)
-            .await
-            .map(|entry| Arc::clone(&entry.client))
+        self.release_mtproto_lock(user_id).await;
+
+        outcome
     }
 
+    /// Best-effort disconnect for login retries; also releases the Redis lease.
     pub async fn invalidate(&self, user_id: UserId) {
-        if let Some(entry) = self.cache.get(&user_id).await {
-            shutdown_client(&entry.client, &entry.runner);
+        self.release_mtproto_lock(user_id).await;
+    }
+
+    async fn acquire_mtproto_lock(&self, user_id: UserId) -> bool {
+        for _ in 0..MTPROTO_LOCK_ATTEMPTS {
+            let acquired: Option<String> = self
+                .redis
+                .set(
+                    mtproto_lock_key(user_id),
+                    "1",
+                    Some(Expiration::EX(MTPROTO_LOCK_TTL_SECS)),
+                    Some(SetOptions::NX),
+                    false,
+                )
+                .await
+                .ok()
+                .flatten();
+            if acquired.is_some() {
+                return true;
+            }
+            tokio::time::sleep(MTPROTO_LOCK_WAIT).await;
         }
-        self.cache.invalidate(&user_id).await;
+        false
+    }
+
+    async fn release_mtproto_lock(&self, user_id: UserId) {
+        let _ = self
+            .redis
+            .del::<(), _>(mtproto_lock_key(user_id))
+            .await;
+    }
+
+    async fn build_user_client(
+        &self,
+        pool: &sqlx::PgPool,
+        user_id: UserId,
+    ) -> Result<Arc<CachedClient>, String> {
+        let api_id = self
+            .config
+            .telegram_api_id
+            .ok_or_else(|| "Telegram API credentials are not configured".to_string())?;
+        let api_hash = self
+            .config
+            .telegram_api_hash
+            .as_deref()
+            .ok_or_else(|| "Telegram API credentials are not configured".to_string())?;
+
+        let row = db::user_telegram_session::get_session(pool, user_id)
+            .await
+            .ok_or_else(|| "Telegram scraping session is not connected".to_string())?;
+        let session_plain = session_crypto::decrypt_session(&row.encrypted_session, &self.config.secret_key)
+            .ok_or_else(|| "failed to decrypt Telegram session".to_string())?;
+        let session_data = telegram_session::parse_session_data(&session_plain)
+            .map_err(|_| "invalid Telegram session data".to_string())?;
+        if !telegram_session::session_is_authenticated(&session_data) {
+            return Err("Telegram session is not authenticated".into());
+        }
+
+        let entry = build_client(api_id, api_hash, session_data)
+            .await
+            .map_err(|e| format!("connect Telegram client: {e}"))?;
+        db::user_telegram_session::touch_last_used(pool, user_id).await;
+        Ok(entry)
     }
 
     /// MTProto client signed in with `TELEGRAM_BOT_TOKEN` for backup-channel operations.

@@ -7,8 +7,9 @@ use std::sync::Arc;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use fred::prelude::{Expiration, KeysInterface};
+use grammers_client::InvocationError;
 use grammers_client::client::PasswordToken;
-use grammers_client::sender::SenderPool;
+use grammers_client::sender::{SenderPool, SenderPoolFatHandle};
 use grammers_client::{Client, SignInError};
 use grammers_session::types::UpdatesState;
 use grammers_session::{Session, SessionData, storages::MemorySession};
@@ -91,13 +92,14 @@ fn require_api(config: &AppConfig) -> Result<(i32, &str), String> {
 }
 
 async fn request_code_hash(
-    client: &Client,
+    ephemeral: &EphemeralClient,
     phone: &str,
     api_hash: &str,
     api_id: i32,
 ) -> Result<String, String> {
     use tl::enums::auth::SentCode as SC;
 
+    let client = ephemeral.client();
     let request = tl::functions::auth::SendCode {
         phone_number: phone.to_string(),
         api_id,
@@ -116,12 +118,40 @@ async fn request_code_hash(
         .into(),
     };
 
-    let sent_code: tl::types::auth::SentCode = match client.invoke(&request).await {
+    let sent_code = match client.invoke(&request).await {
         Ok(x) => match x {
             SC::Code(code) => code,
             SC::Success(_) => return Err("unexpected login success before code entry".into()),
             SC::PaymentRequired(_) => return Err("telegram payment required for login".into()),
         },
+        Err(InvocationError::Rpc(err)) if err.code == 303 => {
+            let old_dc_id = ephemeral
+                .session()
+                .home_dc_id()
+                .map_err(|e| format!("session home_dc: {e}"))?;
+            let new_dc_id = err
+                .value
+                .ok_or_else(|| "PHONE_MIGRATE missing dc id".to_string())?
+                as i32;
+            ephemeral.handle().disconnect_from_dc(old_dc_id);
+            ephemeral
+                .session()
+                .set_home_dc_id(new_dc_id)
+                .await
+                .map_err(|e| format!("session migrate dc: {e}"))?;
+            match client.invoke(&request).await {
+                Ok(x) => match x {
+                    SC::Code(code) => code,
+                    SC::Success(_) => {
+                        return Err("unexpected login success before code entry".into())
+                    }
+                    SC::PaymentRequired(_) => {
+                        return Err("telegram payment required for login".into())
+                    }
+                },
+                Err(e) => return Err(format!("request login code after migrate: {e}")),
+            }
+        }
         Err(e) => return Err(format!("request login code: {e}")),
     };
 
@@ -171,12 +201,14 @@ async fn fetch_password_data(client: &Client) -> Result<tl::types::account::Pass
 async fn spawn_client(api_id: i32, session_data: SessionData) -> EphemeralClient {
     let session = Arc::new(MemorySession::from(session_data));
     let pool = SenderPool::new(Arc::clone(&session) as Arc<_>, api_id);
+    let handle = pool.handle.clone();
     let runner = pool.runner;
     let runner_task = tokio::spawn(async move {
         runner.run().await;
     });
     EphemeralClient {
         session,
+        handle,
         client: Arc::new(Client::new(pool.handle)),
         runner: runner_task,
     }
@@ -186,6 +218,7 @@ async fn spawn_client(api_id: i32, session_data: SessionData) -> EphemeralClient
 /// cannot leave duplicate auth-key connections open against Telegram.
 struct EphemeralClient {
     session: Arc<MemorySession>,
+    handle: SenderPoolFatHandle,
     client: Arc<Client>,
     runner: JoinHandle<()>,
 }
@@ -193,6 +226,10 @@ struct EphemeralClient {
 impl EphemeralClient {
     fn session(&self) -> &MemorySession {
         &self.session
+    }
+
+    fn handle(&self) -> &SenderPoolFatHandle {
+        &self.handle
     }
 
     fn client(&self) -> &Client {
@@ -342,7 +379,7 @@ pub async fn start_login(
 
     let (api_id, api_hash) = require_api(config)?;
     let ephemeral = spawn_client(api_id, grammers_session::SessionData::default()).await;
-    let phone_code_hash = request_code_hash(ephemeral.client(), phone, api_hash, api_id).await?;
+    let phone_code_hash = request_code_hash(&ephemeral, phone, api_hash, api_id).await?;
 
     let snapshot = snapshot_session(ephemeral.session()).await?;
     let state = RedisPendingLogin {
@@ -494,6 +531,11 @@ pub async fn delete_user_session(
     user_id: UserId,
 ) -> Result<bool, String> {
     pending.clear(user_id).await;
+    let _ = clients
+        .with_user_client(pool, user_id, |client| async move {
+            let _ = client.sign_out().await;
+        })
+        .await;
     clients.invalidate(user_id).await;
     crate::services::telegram_peer::invalidate_dialog_peer_cache(user_id).await;
     db::user_telegram_session::delete_session(pool, user_id)

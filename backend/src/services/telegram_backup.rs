@@ -392,33 +392,22 @@ pub async fn resolve_bot_mtproto_client(state: &AppState) -> Result<Arc<Client>,
         })
 }
 
-pub async fn resolve_mtproto_client(
-    state: &AppState,
+pub async fn resolve_session_user_id(
+    pool: &sqlx::PgPool,
     preferred_user_id: Option<crate::db::types::UserId>,
-) -> Result<(crate::db::types::UserId, Arc<Client>), String> {
+) -> Option<crate::db::types::UserId> {
     if let Some(user_id) = preferred_user_id {
-        if let Some(client) = state
-            .telegram_clients
-            .get_client(&state.pool, user_id)
-            .await
-        {
-            return Ok((user_id, client));
+        if crate::db::user_telegram_session::has_session(pool, user_id).await {
+            return Some(user_id);
         }
-        return Err(format!(
-            "Telegram scraping session not available for user {}",
-            user_id.0
-        ));
+        return None;
     }
 
-    for user_id in crate::db::user_telegram_session::list_session_user_ids(&state.pool).await {
-        if let Some(client) = state
-            .telegram_clients
-            .get_client(&state.pool, user_id)
-            .await
-        {
-            return Ok((user_id, client));
+    for user_id in crate::db::user_telegram_session::list_session_user_ids(pool).await {
+        if crate::db::user_telegram_session::has_session(pool, user_id).await {
+            return Some(user_id);
         }
     }
 
-    Err("No Telegram scraping session is connected".to_string())
+    None
 }

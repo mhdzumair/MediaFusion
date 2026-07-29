@@ -186,33 +186,36 @@ pub async fn scrape_for_user(
         return vec![];
     }
 
-    let Some(client) = state
-        .telegram_clients
-        .get_client(&state.pool, user_id)
-        .await
-    else {
-        tracing::debug!("telegram: no client for user {}", user_id.0);
-        return vec![];
-    };
-
     let keyword_filters = state
         .keyword_filters
         .read()
         .map(|g| g.clone())
         .unwrap_or_default();
+    let min_size = state.config.min_scraping_video_size;
 
-    scrape(
-        &client,
-        &channels,
-        meta,
-        media_type,
-        season,
-        episode,
-        Some(DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT),
-        state.config.min_scraping_video_size,
-        &keyword_filters,
-    )
-    .await
+    state
+        .telegram_clients
+        .with_user_client(&state.pool, user_id, |client| {
+            let channels = channels.clone();
+            let meta = meta.clone();
+            let media_type = media_type.to_string();
+            async move {
+                scrape(
+                    &client,
+                    &channels,
+                    &meta,
+                    &media_type,
+                    season,
+                    episode,
+                    Some(DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT),
+                    min_size,
+                    &keyword_filters,
+                )
+                .await
+            }
+        })
+        .await
+        .unwrap_or_default()
 }
 
 // ─── Per-channel scrape ───────────────────────────────────────────────────────

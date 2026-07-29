@@ -67,55 +67,68 @@ impl JobHandler for TelegramBgScraper {
             if ctx.is_cancelled() {
                 return Err(JobError::Cancelled);
             }
-            let Some(client) = ctx
+
+            let channels = target.channels.clone();
+            let user_id = target.user_id;
+            let scrape_outcome = ctx
                 .state
                 .telegram_clients
-                .get_client(&ctx.state.pool, target.user_id)
-                .await
-            else {
-                warn!(
-                    "telegram_bg: could not load client for user {}",
-                    target.user_id.0
-                );
-                continue;
-            };
+                .with_user_client(&ctx.state.pool, user_id, |client| {
+                    let ctx = &ctx;
+                    let channels = channels.clone();
+                    async move {
+                        let mut totals = ScrapeMetrics::default();
+                        let mut channel_results = Vec::with_capacity(channels.len());
 
-            let mut totals = ScrapeMetrics::default();
-            let mut channel_results = Vec::with_capacity(target.channels.len());
+                        for channel in &channels {
+                            if ctx.is_cancelled() {
+                                return Err("cancelled".to_string());
+                            }
+                            let result = scrape_and_persist_channel(
+                                ctx,
+                                &client,
+                                user_id,
+                                channel,
+                                message_limit,
+                                min_size,
+                            )
+                            .await;
+                            totals.imported += result.metrics.imported;
+                            totals.skipped += result.metrics.skipped;
+                            totals.errors += result.metrics.errors;
+                            channel_results.push(result);
+                        }
 
-            for channel in &target.channels {
-                if ctx.is_cancelled() {
-                    return Err(JobError::Cancelled);
-                }
-                let result = scrape_and_persist_channel(
-                    &ctx,
-                    &client,
-                    target.user_id,
-                    channel,
-                    message_limit,
-                    min_size,
-                )
+                        Ok((totals, channel_results))
+                    }
+                })
                 .await;
-                totals.imported += result.metrics.imported;
-                totals.skipped += result.metrics.skipped;
-                totals.errors += result.metrics.errors;
-                channel_results.push(result);
+
+            match scrape_outcome {
+                Ok(Ok((totals, channel_results))) => {
+                    total_streams += totals.imported;
+
+                    send_scrape_notifications(
+                        &ctx,
+                        api.as_ref(),
+                        &channel_results,
+                        &totals,
+                        &limit_label,
+                        user_id,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await;
+                }
+                Ok(Err(err)) if err == "cancelled" => return Err(JobError::Cancelled),
+                Ok(Err(err)) | Err(err) => {
+                    warn!(
+                        "telegram_bg: could not load client for user {}: {err}",
+                        user_id.0
+                    );
+                }
             }
-
-            total_streams += totals.imported;
-
-            send_scrape_notifications(
-                &ctx,
-                api.as_ref(),
-                &channel_results,
-                &totals,
-                &limit_label,
-                target.user_id,
-                None,
-                None,
-                None,
-            )
-            .await;
         }
 
         info!("telegram_bg: done — total streams persisted across all users: {total_streams}");
@@ -204,66 +217,87 @@ async fn run_user_scrape(
         return Ok(());
     }
 
-    let Some(client) = ctx
-        .state
-        .telegram_clients
-        .get_client(&ctx.state.pool, mediafusion_user_id)
-        .await
-    else {
-        warn!(
-            "telegram_bg: user {} has no Telegram scraping session",
-            mediafusion_user_id.0
-        );
-        return Ok(());
-    };
-
     let owned_api = if api.is_some() {
         None
     } else {
         BotApi::from_state(&ctx.state).ok()
     };
     let api = api.or(owned_api.as_ref());
-    let mut totals = ScrapeMetrics::default();
-    let mut channel_results = Vec::with_capacity(channels.len());
     let limit_label = format_scrape_message_limit(message_limit);
 
-    for (index, channel) in channels.iter().enumerate() {
-        if ctx.is_cancelled() {
-            return Err(JobError::Cancelled);
-        }
+    let scrape_result = ctx
+        .state
+        .telegram_clients
+        .with_user_client(&ctx.state.pool, mediafusion_user_id, |client| {
+            let channels = channels.clone();
+            let args = args.clone();
+            async move {
+                let mut totals = ScrapeMetrics::default();
+                let mut channel_results = Vec::with_capacity(channels.len());
 
-        if let (Some(api), Some(mid), Some(chat_id)) = (api, progress_message_id, chat_id) {
-            let channel_limit = parse_channel_message_limit(args, Some(channel));
-            let channel_limit_label = format_scrape_message_limit(channel_limit);
-            let progress = if channels.len() == 1 {
-                format!(
-                    "🔍 *Scraping Channel*\n\n`{channel}`\nDepth: {channel_limit_label}\n\n⏳ Fetching messages..."
-                )
-            } else {
-                format!(
-                    "🔍 *Scraping Channels* ({}/{total})\n\n`{channel}`\nDepth: {channel_limit_label}\n\n⏳ Fetching messages...",
-                    index + 1,
-                    total = channels.len()
-                )
-            };
-            let _ = api.edit_message_text(chat_id, mid, &progress, None).await;
-        }
+                for (index, channel) in channels.iter().enumerate() {
+                    if ctx.is_cancelled() {
+                        return Err("cancelled".to_string());
+                    }
 
-        let channel_limit = parse_channel_message_limit(args, Some(channel));
-        let result = scrape_and_persist_channel(
-            ctx,
-            &client,
-            mediafusion_user_id,
-            channel,
-            channel_limit,
-            min_size,
-        )
+                    if let (Some(api), Some(mid), Some(chat_id)) =
+                        (api, progress_message_id, chat_id)
+                    {
+                        let channel_limit = parse_channel_message_limit(&args, Some(channel));
+                        let channel_limit_label = format_scrape_message_limit(channel_limit);
+                        let progress = if channels.len() == 1 {
+                            format!(
+                                "🔍 *Scraping Channel*\n\n`{channel}`\nDepth: {channel_limit_label}\n\n⏳ Fetching messages..."
+                            )
+                        } else {
+                            format!(
+                                "🔍 *Scraping Channels* ({}/{total})\n\n`{channel}`\nDepth: {channel_limit_label}\n\n⏳ Fetching messages...",
+                                index + 1,
+                                total = channels.len()
+                            )
+                        };
+                        let _ = api.edit_message_text(chat_id, mid, &progress, None).await;
+                    }
+
+                    let channel_limit = parse_channel_message_limit(&args, Some(channel));
+                    let result = scrape_and_persist_channel(
+                        ctx,
+                        &client,
+                        mediafusion_user_id,
+                        channel,
+                        channel_limit,
+                        min_size,
+                    )
+                    .await;
+                    totals.imported += result.metrics.imported;
+                    totals.skipped += result.metrics.skipped;
+                    totals.errors += result.metrics.errors;
+                    channel_results.push(result);
+                }
+
+                Ok((totals, channel_results))
+            }
+        })
         .await;
-        totals.imported += result.metrics.imported;
-        totals.skipped += result.metrics.skipped;
-        totals.errors += result.metrics.errors;
-        channel_results.push(result);
-    }
+
+    let (totals, channel_results) = match scrape_result {
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) if err == "cancelled" => return Err(JobError::Cancelled),
+        Ok(Err(err)) => {
+            warn!(
+                "telegram_bg: user {} has no Telegram scraping session: {err}",
+                mediafusion_user_id.0
+            );
+            return Ok(());
+        }
+        Err(err) => {
+            warn!(
+                "telegram_bg: user {} has no Telegram scraping session: {err}",
+                mediafusion_user_id.0
+            );
+            return Ok(());
+        }
+    };
 
     send_scrape_notifications(
         ctx,

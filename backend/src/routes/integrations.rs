@@ -1372,35 +1372,44 @@ pub async fn get_telegram_dialog_photo(
         return unauthorized();
     };
 
-    let Some(client) = state
-        .telegram_clients
-        .get_client(&state.pool, UserId(user_id))
-        .await
-    else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
+    let user_id = UserId(user_id);
+    let channel_id_for_lookup = channel_id.clone();
 
-    let mut dialog_peers =
-        crate::services::telegram_peer::cached_dialog_peer_map(UserId(user_id), &client).await;
-    let mut bytes =
-        crate::services::telegram_peer::download_channel_photo(&client, &channel_id, &dialog_peers)
-            .await;
-    if bytes.is_none() {
-        dialog_peers = crate::services::telegram_peer::load_dialog_peer_map(&client)
-            .await
-            .0;
-        crate::services::telegram_peer::store_dialog_peer_map(
-            UserId(user_id),
-            dialog_peers.clone(),
-        )
-        .await;
-        bytes = crate::services::telegram_peer::download_channel_photo(
-            &client,
-            &channel_id,
-            &dialog_peers,
-        )
-        .await;
-    }
+    let bytes = state
+        .telegram_clients
+        .with_user_client(&state.pool, user_id, |client| {
+            let channel_id = channel_id_for_lookup.clone();
+            async move {
+                let mut dialog_peers =
+                    crate::services::telegram_peer::cached_dialog_peer_map(user_id, &client).await;
+                let mut bytes = crate::services::telegram_peer::download_channel_photo(
+                    &client,
+                    &channel_id,
+                    &dialog_peers,
+                )
+                .await;
+                if bytes.is_none() {
+                    dialog_peers =
+                        crate::services::telegram_peer::load_dialog_peer_map(&client).await.0;
+                    crate::services::telegram_peer::store_dialog_peer_map(
+                        user_id,
+                        dialog_peers.clone(),
+                    )
+                    .await;
+                    bytes = crate::services::telegram_peer::download_channel_photo(
+                        &client,
+                        &channel_id,
+                        &dialog_peers,
+                    )
+                    .await;
+                }
+                bytes
+            }
+        })
+        .await
+        .ok()
+        .flatten();
+
     let Some(bytes) = bytes else {
         return StatusCode::NOT_FOUND.into_response();
     };
