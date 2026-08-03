@@ -598,7 +598,7 @@ impl JobHandler for TamilMvCrawl {
     async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
         let (pages, start_page) = parse_listing_page_args(&args);
         let root = crate::scrapers::scraper_config::load(&ctx.state).await;
-        let homepage = spider_homepage("tamilmv", "https://www.1tamilmv.earth", &root);
+        let homepage = spider_homepage("tamilmv", "https://www.1tamilmv.observer", &root);
         let catalogs = load_catalogs("tamilmv", &root);
         scrape_tamil_forum(
             "tamilmv", "TamilMV", &homepage, &catalogs, pages, start_page, &ctx,
