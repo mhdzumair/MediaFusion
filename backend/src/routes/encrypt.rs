@@ -29,6 +29,26 @@ pub async fn handler(
         }
     };
 
+    // On private instances the api_password embedded in the config is what the
+    // stremio_auth_middleware later checks on every /{secret_str}/... request.
+    // Reject a wrong or missing password here instead of minting a secret that
+    // can only ever produce 401s at install time.
+    if !state.config.is_public_instance
+        && let Some(ref required) = state.config.api_password
+    {
+        let provided = user_data.api_password.as_deref().unwrap_or("");
+        if provided != required.as_str() {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": "Invalid or missing API password. Enter this instance's API password and try again.",
+                })),
+            )
+                .into_response();
+        }
+    }
+
     let default_nzbdav = state
         .config
         .default_nzbdav_url
