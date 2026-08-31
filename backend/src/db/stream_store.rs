@@ -20,6 +20,30 @@ pub fn strip_nul(s: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Display name for stream_file rows in annotation UIs.
+///
+/// Scrapers often insert placeholder rows with an empty `filename` when only
+/// season/episode could be inferred from the release title. Treat `""` like
+/// `NULL` and fall back to SxxExx or a stable file label.
+pub fn stream_file_display_name(
+    filename: Option<&str>,
+    file_index: Option<i32>,
+    file_id: i32,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> String {
+    if let Some(name) = filename.filter(|s| !s.is_empty()) {
+        return name.to_string();
+    }
+    if let (Some(s), Some(e)) = (season, episode) {
+        return format!("S{s:02}E{e:02}");
+    }
+    if let Some(s) = season {
+        return format!("S{s:02}");
+    }
+    format!("File {}", file_index.unwrap_or(file_id))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreStreamResult {
     Inserted(StreamId),
@@ -879,7 +903,9 @@ where
             r#"
             INSERT INTO stream_file (stream_id, file_index, filename, size, file_type, is_archive)
             VALUES ($1, $2, $3, $4, $5, false)
-            ON CONFLICT (stream_id, file_index) DO UPDATE SET filename = EXCLUDED.filename
+            ON CONFLICT (stream_id, file_index) DO UPDATE SET
+                filename = COALESCE(NULLIF(EXCLUDED.filename, ''), stream_file.filename),
+                size = CASE WHEN EXCLUDED.size > 0 THEN EXCLUDED.size ELSE stream_file.size END
             RETURNING id
             "#,
         )
@@ -895,7 +921,9 @@ where
             r#"
             INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
             VALUES ($1, $2, $3, $4, false)
-            ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive
+            ON CONFLICT (stream_id, file_index) DO UPDATE SET
+                is_archive = EXCLUDED.is_archive,
+                filename = COALESCE(NULLIF(EXCLUDED.filename, ''), stream_file.filename)
             RETURNING id
             "#,
         )
@@ -1022,4 +1050,33 @@ fn sanitize_base(base: &StreamStoreBase) -> StreamStoreBase {
     b.name = strip_nul(&b.name).into_owned();
     b.source = strip_nul(&b.source).into_owned();
     b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stream_file_display_name;
+
+    #[test]
+    fn stream_file_display_name_prefers_non_empty_filename() {
+        assert_eq!(
+            stream_file_display_name(Some("Show.S03E01.mkv"), Some(0), 1, Some(3), Some(1)),
+            "Show.S03E01.mkv"
+        );
+    }
+
+    #[test]
+    fn stream_file_display_name_treats_empty_string_as_missing() {
+        assert_eq!(
+            stream_file_display_name(Some(""), Some(2), 99, Some(4), Some(1)),
+            "S04E01"
+        );
+    }
+
+    #[test]
+    fn stream_file_display_name_falls_back_to_file_index() {
+        assert_eq!(
+            stream_file_display_name(None, Some(7), 99, None, None),
+            "File 7"
+        );
+    }
 }
