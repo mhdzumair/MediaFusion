@@ -229,6 +229,39 @@ export function useDeleteSeasonAdmin() {
   })
 }
 
+export function useBulkDeleteSeasonsAdmin() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ mediaId, seasonNumbers }: { mediaId: number; seasonNumbers: number[] }) =>
+      userMetadataApi.bulkDeleteSeasonsAdmin(mediaId, seasonNumbers),
+    onSuccess: (_, { mediaId }) => {
+      queryClient.invalidateQueries({ queryKey: userMetadataKeys.detail(mediaId) })
+      queryClient.invalidateQueries({ queryKey: ['catalog'] })
+    },
+  })
+}
+
+export function useBulkDeleteEpisodesAdmin() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      mediaId,
+      episodeIds,
+      deleteStreamLinks = false,
+    }: {
+      mediaId: number
+      episodeIds: number[]
+      deleteStreamLinks?: boolean
+    }) => userMetadataApi.bulkDeleteEpisodesAdmin(mediaId, episodeIds, deleteStreamLinks),
+    onSuccess: (_, { mediaId }) => {
+      queryClient.invalidateQueries({ queryKey: userMetadataKeys.detail(mediaId) })
+      queryClient.invalidateQueries({ queryKey: ['catalog'] })
+    },
+  })
+}
+
 // ============================================
 // Search Hook
 // ============================================

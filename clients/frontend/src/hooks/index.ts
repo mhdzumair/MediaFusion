@@ -285,6 +285,7 @@ export {
   useStreamsNeedingAnnotation,
   useStreamFileLinks,
   useUpdateFileLinks,
+  useAnnotateFiles,
   useDismissAnnotationRequest,
   useBlockStream,
   fileLinksKeys,
@@ -304,6 +305,8 @@ export {
   useDeleteSeason,
   useDeleteEpisodeAdmin,
   useDeleteSeasonAdmin,
+  useBulkDeleteSeasonsAdmin,
+  useBulkDeleteEpisodesAdmin,
   useMetadataSearch,
   userMetadataKeys,
 } from './useUserMetadata'

@@ -227,6 +227,24 @@ pub struct DeleteEpisodeAdminQuery {
     pub delete_stream_links: bool,
 }
 
+#[derive(Deserialize)]
+pub struct BulkDeleteSeasonsRequest {
+    pub season_numbers: Vec<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct BulkDeleteEpisodesRequest {
+    pub episode_ids: Vec<i32>,
+    #[serde(default)]
+    pub delete_stream_links: bool,
+}
+
+struct BulkDeleteResult {
+    deleted: i64,
+    failed: i64,
+    errors: Vec<String>,
+}
+
 // ─── Helper: build a basic media JSON object from DB row ─────────────────────
 
 #[derive(sqlx::FromRow)]
@@ -1740,6 +1758,316 @@ pub async fn admin_delete_season(
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => delete_season_error_response(e),
     }
+}
+
+async fn bulk_delete_series_seasons(
+    pool: &sqlx::PgPool,
+    media_id: MediaId,
+    season_numbers: &[i32],
+) -> Result<BulkDeleteResult, DeleteSeasonError> {
+    if season_numbers.is_empty() {
+        return Ok(BulkDeleteResult {
+            deleted: 0,
+            failed: 0,
+            errors: vec![],
+        });
+    }
+
+    let mut tx = pool.begin().await?;
+    let mut deleted = 0i64;
+    let mut failed = 0i64;
+    let mut errors = Vec::new();
+
+    let series_id: SeriesId =
+        sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
+            .bind(media_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(DeleteSeasonError::SeriesNotFound)?;
+
+    for season_number in season_numbers {
+        let season_id: Option<SeasonId> =
+            sqlx::query_scalar("SELECT id FROM season WHERE series_id = $1 AND season_number = $2")
+                .bind(series_id)
+                .bind(season_number)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+        let Some(season_id) = season_id else {
+            errors.push(format!("Season {season_number} not found"));
+            failed += 1;
+            continue;
+        };
+
+        if let Err(e) = sqlx::query(
+            "DELETE FROM episode_image WHERE episode_id IN (SELECT id FROM episode WHERE season_id = $1)",
+        )
+        .bind(season_id)
+        .execute(&mut *tx)
+        .await
+        {
+            errors.push(format!("Season {season_number}: {e}"));
+            failed += 1;
+            continue;
+        }
+
+        if let Err(e) = sqlx::query("DELETE FROM episode WHERE season_id = $1")
+            .bind(season_id)
+            .execute(&mut *tx)
+            .await
+        {
+            errors.push(format!("Season {season_number}: {e}"));
+            failed += 1;
+            continue;
+        }
+
+        if let Err(e) = sqlx::query(
+            "DELETE FROM file_media_link WHERE media_id = $1 AND season_number = $2",
+        )
+        .bind(media_id)
+        .bind(season_number)
+        .execute(&mut *tx)
+        .await
+        {
+            errors.push(format!("Season {season_number}: {e}"));
+            failed += 1;
+            continue;
+        }
+
+        if let Err(e) = sqlx::query("DELETE FROM season WHERE id = $1")
+            .bind(season_id)
+            .execute(&mut *tx)
+            .await
+        {
+            errors.push(format!("Season {season_number}: {e}"));
+            failed += 1;
+            continue;
+        }
+
+        deleted += 1;
+    }
+
+    sqlx::query(
+        "UPDATE series_metadata SET \
+            total_seasons = (SELECT COUNT(*)::int FROM season WHERE series_id = $1), \
+            total_episodes = (SELECT COUNT(*)::int FROM episode e \
+                INNER JOIN season s ON s.id = e.season_id WHERE s.series_id = $1) \
+         WHERE id = $1",
+    )
+    .bind(series_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(BulkDeleteResult {
+        deleted,
+        failed,
+        errors,
+    })
+}
+
+async fn bulk_delete_episodes_admin(
+    pool: &sqlx::PgPool,
+    media_id: MediaId,
+    episode_ids: &[i32],
+    delete_stream_links: bool,
+) -> BulkDeleteResult {
+    let mut deleted = 0i64;
+    let mut failed = 0i64;
+    let mut errors = Vec::new();
+
+    for episode_id in episode_ids {
+        let episode_id = EpisodeId(*episode_id);
+        let row: Option<(SeasonId, i32)> = sqlx::query_as(
+            "SELECT e.season_id, e.episode_number FROM episode e \
+             INNER JOIN season s ON s.id = e.season_id \
+             INNER JOIN series_metadata sm ON sm.id = s.series_id \
+             WHERE e.id = $1 AND sm.media_id = $2",
+        )
+        .bind(episode_id)
+        .bind(media_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+
+        let Some((season_id, episode_number)) = row else {
+            errors.push(format!("Episode {episode_id} not found for this series"));
+            failed += 1;
+            continue;
+        };
+
+        if delete_stream_links {
+            let _ = sqlx::query(
+                "DELETE FROM file_media_link WHERE media_id = $1 AND episode_number = $2",
+            )
+            .bind(media_id)
+            .bind(episode_number)
+            .execute(pool)
+            .await;
+        }
+
+        let result = async {
+            sqlx::query("DELETE FROM episode_image WHERE episode_id = $1")
+                .bind(episode_id)
+                .execute(pool)
+                .await?;
+            sqlx::query("DELETE FROM episode WHERE id = $1")
+                .bind(episode_id)
+                .execute(pool)
+                .await?;
+            sqlx::query(
+                "UPDATE season SET episode_count = GREATEST(0, episode_count - 1) WHERE id = $1",
+            )
+            .bind(season_id)
+            .execute(pool)
+            .await?;
+            let series_id: Option<SeriesId> =
+                sqlx::query_scalar("SELECT series_id FROM season WHERE id = $1")
+                    .bind(season_id)
+                    .fetch_optional(pool)
+                    .await?;
+            if let Some(series_id) = series_id {
+                sqlx::query(
+                    "UPDATE series_metadata SET total_episodes = GREATEST(0, COALESCE(total_episodes, 1) - 1) WHERE id = $1",
+                )
+                .bind(series_id)
+                .execute(pool)
+                .await?;
+            }
+            Ok::<(), sqlx::Error>(())
+        }
+        .await;
+
+        match result {
+            Ok(()) => deleted += 1,
+            Err(e) => {
+                errors.push(format!("Episode {episode_id}: {e}"));
+                failed += 1;
+            }
+        }
+    }
+
+    BulkDeleteResult {
+        deleted,
+        failed,
+        errors,
+    }
+}
+
+/// POST /api/v1/metadata/user/{media_id}/seasons/bulk-delete/admin
+pub async fn admin_bulk_delete_seasons(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(media_id): Path<MediaId>,
+    Json(body): Json<BulkDeleteSeasonsRequest>,
+) -> Response {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(resp) = require_mod_or_admin(&state.pool, user_id).await {
+        return *resp;
+    }
+
+    if body.season_numbers.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "No season numbers provided"})),
+        )
+            .into_response();
+    }
+
+    let media_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
+        .bind(media_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or(false);
+
+    if !media_exists {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Metadata not found"})),
+        )
+            .into_response();
+    }
+
+    match bulk_delete_series_seasons(&state.pool, media_id, &body.season_numbers).await {
+        Ok(result) => Json(json!({
+            "deleted": result.deleted,
+            "failed": result.failed,
+            "errors": result.errors,
+        }))
+        .into_response(),
+        Err(e) => delete_season_error_response(e),
+    }
+}
+
+/// POST /api/v1/metadata/user/{media_id}/episodes/bulk-delete/admin
+pub async fn admin_bulk_delete_episodes(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(media_id): Path<MediaId>,
+    Json(body): Json<BulkDeleteEpisodesRequest>,
+) -> Response {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(resp) = require_mod_or_admin(&state.pool, user_id).await {
+        return *resp;
+    }
+
+    if body.episode_ids.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "No episode IDs provided"})),
+        )
+            .into_response();
+    }
+
+    let media_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
+        .bind(media_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or(false);
+
+    if !media_exists {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Metadata not found"})),
+        )
+            .into_response();
+    }
+
+    let result = bulk_delete_episodes_admin(
+        &state.pool,
+        media_id,
+        &body.episode_ids,
+        body.delete_stream_links,
+    )
+    .await;
+
+    Json(json!({
+        "deleted": result.deleted,
+        "failed": result.failed,
+        "errors": result.errors,
+    }))
+    .into_response()
 }
 
 // ─── Import request body ──────────────────────────────────────────────────────

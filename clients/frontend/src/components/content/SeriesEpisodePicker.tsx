@@ -15,7 +15,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Play, Calendar, Tv, Check, Trash2, Loader2, Edit } from 'lucide-react'
+import { Play, Calendar, Tv, Check, Trash2, Loader2, Edit, CheckSquare, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EpisodeEditSheet, type EpisodeData } from './EpisodeEditSheet'
 import { useAuth } from '@/contexts/AuthContext'
@@ -54,6 +54,9 @@ interface SeriesEpisodePickerProps {
   isDeletingEpisode?: boolean
   onDeleteSeason?: (seasonNumber: number) => Promise<void>
   isDeletingSeason?: boolean
+  onBulkDeleteSeasons?: (seasonNumbers: number[]) => Promise<void>
+  onBulkDeleteEpisodes?: (episodeIds: number[]) => Promise<void>
+  isBulkDeleting?: boolean
   onEpisodeEditSuccess?: () => void
   // Series info for episode edit context
   seriesTitle?: string
@@ -72,6 +75,9 @@ export function SeriesEpisodePicker({
   isDeletingEpisode = false,
   onDeleteSeason,
   isDeletingSeason = false,
+  onBulkDeleteSeasons,
+  onBulkDeleteEpisodes,
+  isBulkDeleting = false,
   onEpisodeEditSuccess,
   seriesTitle,
   className,
@@ -81,6 +87,8 @@ export function SeriesEpisodePicker({
   )
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<number | null>(null)
   const [deletingSeasonNumber, setDeletingSeasonNumber] = useState<number | null>(null)
+  const [seasonSelectMode, setSeasonSelectMode] = useState(false)
+  const [selectedSeasonNumbers, setSelectedSeasonNumbers] = useState<number[]>([])
   const { isAuthenticated } = useAuth()
 
   const currentSeason = useMemo(
@@ -89,6 +97,24 @@ export function SeriesEpisodePicker({
   )
 
   const episodes = currentSeason?.episodes ?? []
+  const deletableEpisodeIds = episodes.flatMap((episode) => (episode.id ? [episode.id] : []))
+
+  const toggleSeasonSelection = (seasonNumber: number) => {
+    setSelectedSeasonNumbers((prev) =>
+      prev.includes(seasonNumber) ? prev.filter((n) => n !== seasonNumber) : [...prev, seasonNumber],
+    )
+  }
+
+  const handleSeasonTabClick = (seasonNumber: number) => {
+    if (seasonSelectMode) {
+      toggleSeasonSelection(seasonNumber)
+      return
+    }
+    onSeasonChange(seasonNumber)
+    if (!expandedSeasons.includes(seasonNumber)) {
+      setExpandedSeasons((prev) => [...prev, seasonNumber])
+    }
+  }
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return null
@@ -130,9 +156,95 @@ export function SeriesEpisodePicker({
             </Badge>
           )}
         </div>
-        <CardDescription>
-          {seasons.length} season{seasons.length !== 1 ? 's' : ''} available
+        <CardDescription className="flex items-center justify-between gap-3">
+          <span>
+            {seasons.length} season{seasons.length !== 1 ? 's' : ''} available
+          </span>
+          {isAdmin && (onBulkDeleteSeasons || onBulkDeleteEpisodes) && (
+            <div className="flex items-center gap-2">
+              {onBulkDeleteSeasons && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={seasonSelectMode ? 'secondary' : 'outline'}
+                  className="h-7 rounded-md"
+                  onClick={() => {
+                    setSeasonSelectMode((prev) => !prev)
+                    setSelectedSeasonNumbers([])
+                  }}
+                  disabled={isBulkDeleting}
+                >
+                  {seasonSelectMode ? 'Cancel select' : 'Select seasons'}
+                </Button>
+              )}
+            </div>
+          )}
         </CardDescription>
+        {isAdmin && seasonSelectMode && onBulkDeleteSeasons && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 rounded-md"
+              onClick={() => setSelectedSeasonNumbers(seasons.map((s) => s.season_number))}
+              disabled={isBulkDeleting}
+            >
+              Select all
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 rounded-md"
+              onClick={() => setSelectedSeasonNumbers([])}
+              disabled={isBulkDeleting || selectedSeasonNumbers.length === 0}
+            >
+              Clear
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="h-7 rounded-md"
+                  disabled={isBulkDeleting || selectedSeasonNumbers.length === 0}
+                >
+                  {isBulkDeleting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Delete {selectedSeasonNumbers.length} season{selectedSeasonNumbers.length === 1 ? '' : 's'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete selected seasons?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete {selectedSeasonNumbers.length} season
+                    {selectedSeasonNumbers.length === 1 ? '' : 's'} and all episodes inside them. This action cannot be
+                    undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={async () => {
+                      await onBulkDeleteSeasons(selectedSeasonNumbers)
+                      setSelectedSeasonNumbers([])
+                      setSeasonSelectMode(false)
+                    }}
+                  >
+                    Delete seasons
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Horizontal Season Tabs */}
@@ -141,19 +253,33 @@ export function SeriesEpisodePicker({
             {seasons.map((season) => (
               <Button
                 key={season.season_number}
-                variant={selectedSeason === season.season_number ? 'default' : 'outline'}
+                variant={
+                  seasonSelectMode
+                    ? selectedSeasonNumbers.includes(season.season_number)
+                      ? 'destructive'
+                      : 'outline'
+                    : selectedSeason === season.season_number
+                      ? 'default'
+                      : 'outline'
+                }
                 size="sm"
-                onClick={() => {
-                  onSeasonChange(season.season_number)
-                  if (!expandedSeasons.includes(season.season_number)) {
-                    setExpandedSeasons((prev) => [...prev, season.season_number])
-                  }
-                }}
+                onClick={() => handleSeasonTabClick(season.season_number)}
                 className={cn(
                   'rounded-full whitespace-nowrap transition-all',
-                  selectedSeason === season.season_number && 'bg-gradient-to-r from-primary to-primary/80',
+                  !seasonSelectMode &&
+                    selectedSeason === season.season_number &&
+                    'bg-gradient-to-r from-primary to-primary/80',
                 )}
               >
+                {seasonSelectMode && (
+                  <span className="mr-1.5 inline-flex">
+                    {selectedSeasonNumbers.includes(season.season_number) ? (
+                      <CheckSquare className="h-3.5 w-3.5" />
+                    ) : (
+                      <Square className="h-3.5 w-3.5" />
+                    )}
+                  </span>
+                )}
                 {season.name || `Season ${season.season_number}`}
                 <Badge
                   variant="secondary"
@@ -183,7 +309,7 @@ export function SeriesEpisodePicker({
                   <span className="text-primary">{episodes.filter((e) => !isAired(e.released)).length} upcoming</span>
                 )}
               </div>
-              {isAdmin && onDeleteSeason && selectedSeason !== undefined && (
+              {isAdmin && onDeleteSeason && selectedSeason !== undefined && !seasonSelectMode && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
@@ -226,6 +352,46 @@ export function SeriesEpisodePicker({
                         }}
                       >
                         Delete Season
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              {isAdmin && onBulkDeleteEpisodes && deletableEpisodeIds.length > 0 && !seasonSelectMode && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 rounded-md text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={isBulkDeleting}
+                    >
+                      {isBulkDeleting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Delete all episodes
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete all episodes in this season?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete all {deletableEpisodeIds.length} episode
+                        {deletableEpisodeIds.length === 1 ? '' : 's'} in season {selectedSeason}. The season itself will
+                        remain unless you delete it separately.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={async () => {
+                          await onBulkDeleteEpisodes(deletableEpisodeIds)
+                        }}
+                      >
+                        Delete episodes
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>

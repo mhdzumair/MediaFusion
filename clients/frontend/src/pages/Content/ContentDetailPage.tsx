@@ -55,10 +55,11 @@ import {
   useAddToLibrary,
   useRemoveFromLibraryByMediaId,
   useTrackStreamAction,
-  useCreateStreamSuggestion,
   useProfiles,
   useDeleteEpisodeAdmin,
   useDeleteSeasonAdmin,
+  useBulkDeleteSeasonsAdmin,
+  useBulkDeleteEpisodesAdmin,
   useUpdateWatchProgress,
   useDeleteStream,
   type CatalogType,
@@ -66,6 +67,9 @@ import {
 import { StreamCommunityProvider } from '@/contexts/StreamCommunityContext'
 import { ContentLikesProvider } from '@/contexts/ContentLikesContext'
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
+import { useAnnotateFiles } from '@/hooks/useFileLinks'
+import { buildEpisodeAnnotationUpdates } from '@/lib/fileAnnotation'
+import { catalogApi } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { useToast } from '@/hooks/use-toast'
@@ -471,7 +475,7 @@ function StreamActionDialog({
   const [isLoadingFileLinks, setIsLoadingFileLinks] = useState(false)
   const [isSavingFileLinks, setIsSavingFileLinks] = useState(false)
   const trackAction = useTrackStreamAction()
-  const createStreamSuggestion = useCreateStreamSuggestion()
+  const annotateFiles = useAnnotateFiles()
   const { hasMinimumRole } = useAuth()
   const isModerator = hasMinimumRole('moderator')
   const isAdmin = hasMinimumRole('admin')
@@ -560,13 +564,22 @@ function StreamActionDialog({
   const handleOpenFileAnnotation = async () => {
     if (!stream?.id) return
 
-    // Need to look up the media ID from external_id
-    // For now, we need to fetch file links
     setIsLoadingFileLinks(true)
     try {
-      // The API needs stream_id (torrent ID) and media_id
-      // We have metaId (external_id), need to convert or use a different approach
-      // For now, use the episode_links from the stream if available
+      const files = await catalogApi.getStreamFiles(stream.id)
+      setFileLinks(
+        files.map((f) => ({
+          file_id: f.file_id,
+          file_name: f.file_name,
+          size: f.size,
+          season_number: f.season_number,
+          episode_number: f.episode_number,
+          episode_end: f.episode_end,
+        })),
+      )
+      setFileAnnotationOpen(true)
+    } catch (error) {
+      console.error('Failed to load file links:', error)
       if (stream.episode_links && stream.episode_links.length > 0) {
         setFileLinks(
           stream.episode_links.map((el) => ({
@@ -579,8 +592,6 @@ function StreamActionDialog({
         )
         setFileAnnotationOpen(true)
       }
-    } catch (error) {
-      console.error('Failed to load file links:', error)
     } finally {
       setIsLoadingFileLinks(false)
     }
@@ -591,56 +602,18 @@ function StreamActionDialog({
 
     setIsSavingFileLinks(true)
     try {
-      // Find the original files to calculate which fields changed
-      const originalFiles = stream.episode_links || []
+      const originalFiles = fileLinks.length > 0 ? fileLinks : stream.episode_links || []
+      const updates = buildEpisodeAnnotationUpdates(editedFiles, originalFiles)
+      if (updates.length === 0) return
 
-      // Submit each modified field as a suggestion
-      for (const editedFile of editedFiles) {
-        if (!editedFile.isModified) continue
+      await annotateFiles.mutateAsync({
+        stream_id: stream.id,
+        media_id: mediaId,
+        updates,
+        reason: `Episode link correction for ${updates.length} files in ${stream.stream_name || stream.name}`,
+      })
 
-        const originalFile = originalFiles.find((f) => f.file_id === editedFile.file_id)
-        if (!originalFile) continue
-
-        // Check which fields changed
-        if (editedFile.season_number !== (originalFile.season_number ?? null)) {
-          await createStreamSuggestion.mutateAsync({
-            streamId: stream.id!,
-            data: {
-              suggestion_type: 'field_correction',
-              field_name: `episode_link:${editedFile.file_id}:season_number`,
-              current_value: String(originalFile.season_number ?? ''),
-              suggested_value: String(editedFile.season_number ?? ''),
-              reason: `Episode link fix for file: ${editedFile.file_name}`,
-            },
-          })
-        }
-
-        if (editedFile.episode_number !== (originalFile.episode_number ?? null)) {
-          await createStreamSuggestion.mutateAsync({
-            streamId: stream.id!,
-            data: {
-              suggestion_type: 'field_correction',
-              field_name: `episode_link:${editedFile.file_id}:episode_number`,
-              current_value: String(originalFile.episode_number ?? ''),
-              suggested_value: String(editedFile.episode_number ?? ''),
-              reason: `Episode link fix for file: ${editedFile.file_name}`,
-            },
-          })
-        }
-
-        if (editedFile.episode_end !== (originalFile.episode_end ?? null)) {
-          await createStreamSuggestion.mutateAsync({
-            streamId: stream.id!,
-            data: {
-              suggestion_type: 'field_correction',
-              field_name: `episode_link:${editedFile.file_id}:episode_end`,
-              current_value: String(originalFile.episode_end ?? ''),
-              suggested_value: String(editedFile.episode_end ?? ''),
-              reason: `Episode link fix for file: ${editedFile.file_name}`,
-            },
-          })
-        }
-      }
+      onStreamDeleted?.()
     } catch (error) {
       console.error('Failed to save file links:', error)
       throw error
@@ -1410,6 +1383,8 @@ export function ContentDetailPage() {
   // Episode delete mutation (moderator only)
   const deleteEpisodeAdmin = useDeleteEpisodeAdmin()
   const deleteSeasonAdmin = useDeleteSeasonAdmin()
+  const bulkDeleteSeasonsAdmin = useBulkDeleteSeasonsAdmin()
+  const bulkDeleteEpisodesAdmin = useBulkDeleteEpisodesAdmin()
 
   // Handle episode deletion (moderator only)
   // seasonNumber and episodeNumber are passed from SeriesEpisodePicker for potential toast messages
@@ -1460,6 +1435,88 @@ export function ContentDetailPage() {
       console.error('Failed to delete season:', error)
       toast({
         title: 'Failed to delete season',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      })
+      throw error
+    }
+  }
+
+  const handleBulkDeleteSeasons = async (seasonNumbers: number[]) => {
+    if (!item?.id || seasonNumbers.length === 0) return
+    try {
+      const result = await bulkDeleteSeasonsAdmin.mutateAsync({
+        mediaId: item.id,
+        seasonNumbers,
+      })
+      const { data: refreshed } = await refetchCatalogItem()
+      const nextSeasons = refreshed?.seasons ?? []
+      const nextSeason = nextSeasons[0]?.season_number
+      if (
+        selectedSeason !== undefined &&
+        (seasonNumbers.includes(selectedSeason) || !nextSeasons.some((s) => s.season_number === selectedSeason))
+      ) {
+        setSelectedSeason(nextSeason)
+        setSelectedEpisode(undefined)
+        setSearchParams(
+          (prev) => {
+            const params = new URLSearchParams(prev)
+            if (nextSeason !== undefined) {
+              params.set('season', String(nextSeason))
+              params.delete('episode')
+            } else {
+              params.delete('season')
+              params.delete('episode')
+            }
+            return params
+          },
+          { replace: true },
+        )
+      }
+      toast({
+        title: 'Seasons deleted',
+        description: `Removed ${result.deleted} season${result.deleted === 1 ? '' : 's'}${
+          result.failed > 0 ? ` (${result.failed} failed)` : ''
+        }.`,
+      })
+    } catch (error) {
+      console.error('Failed to bulk delete seasons:', error)
+      toast({
+        title: 'Failed to delete seasons',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      })
+      throw error
+    }
+  }
+
+  const handleBulkDeleteEpisodes = async (episodeIds: number[]) => {
+    if (!item?.id || episodeIds.length === 0) return
+    try {
+      const result = await bulkDeleteEpisodesAdmin.mutateAsync({
+        mediaId: item.id,
+        episodeIds,
+      })
+      await refetchCatalogItem()
+      setSelectedEpisode(undefined)
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev)
+          params.delete('episode')
+          return params
+        },
+        { replace: true },
+      )
+      toast({
+        title: 'Episodes deleted',
+        description: `Removed ${result.deleted} episode${result.deleted === 1 ? '' : 's'}${
+          result.failed > 0 ? ` (${result.failed} failed)` : ''
+        }.`,
+      })
+    } catch (error) {
+      console.error('Failed to bulk delete episodes:', error)
+      toast({
+        title: 'Failed to delete episodes',
         description: error instanceof Error ? error.message : 'Please try again.',
         variant: 'destructive',
       })
@@ -2299,6 +2356,9 @@ export function ContentDetailPage() {
               isDeletingEpisode={deleteEpisodeAdmin.isPending}
               onDeleteSeason={handleDeleteSeason}
               isDeletingSeason={deleteSeasonAdmin.isPending}
+              onBulkDeleteSeasons={isAdmin ? handleBulkDeleteSeasons : undefined}
+              onBulkDeleteEpisodes={isAdmin ? handleBulkDeleteEpisodes : undefined}
+              isBulkDeleting={bulkDeleteSeasonsAdmin.isPending || bulkDeleteEpisodesAdmin.isPending}
               onEpisodeEditSuccess={handleEpisodeEditSuccess}
             />
           )}
@@ -2533,6 +2593,7 @@ export function ContentDetailPage() {
                               stream={stream}
                               onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
                               mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                              mediaId={mediaId}
                               isLastPlayed={
                                 stream.id !== undefined &&
                                 (String(stream.id) === lastPlayedStreamId ||
@@ -2549,6 +2610,7 @@ export function ContentDetailPage() {
                               stream={stream}
                               onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
                               mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                              mediaId={mediaId}
                               isLastPlayed={
                                 stream.id !== undefined &&
                                 (String(stream.id) === lastPlayedStreamId ||

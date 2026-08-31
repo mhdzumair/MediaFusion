@@ -302,6 +302,32 @@ export const userMetadataApi = {
   },
 
   /**
+   * Bulk delete seasons (moderator only).
+   */
+  bulkDeleteSeasonsAdmin: (
+    mediaId: number,
+    seasonNumbers: number[],
+  ): Promise<{ deleted: number; failed: number; errors: string[] }> => {
+    return apiClient.post(`/metadata/user/${mediaId}/seasons/bulk-delete/admin`, {
+      season_numbers: seasonNumbers,
+    })
+  },
+
+  /**
+   * Bulk delete episodes (moderator only).
+   */
+  bulkDeleteEpisodesAdmin: (
+    mediaId: number,
+    episodeIds: number[],
+    deleteStreamLinks = false,
+  ): Promise<{ deleted: number; failed: number; errors: string[] }> => {
+    return apiClient.post(`/metadata/user/${mediaId}/episodes/bulk-delete/admin`, {
+      episode_ids: episodeIds,
+      delete_stream_links: deleteStreamLinks,
+    })
+  },
+
+  /**
    * Import metadata from an external provider and create user-owned metadata.
    */
   importFromExternal: (data: ImportFromExternalRequest): Promise<UserMediaResponse> => {
