@@ -435,9 +435,35 @@ async fn process_nzb(
         user_id.unwrap_or(0),
     );
 
-    let media_id = resolve_media(state, &meta_id, meta_type, name, data, None).await;
-
     let parsed = parser::parse_title(name);
+    let mut file_rows: Vec<Value> = data
+        .get("file_data")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if meta_type == "series" {
+        if file_rows.is_empty() {
+            file_rows.push(json!({
+                "index": 0,
+                "filename": name,
+                "size": data.get("total_size").and_then(|v| v.as_i64()),
+            }));
+        }
+        import_helpers::enrich_series_file_episodes(&mut file_rows, name);
+    }
+    let prefetch = import_helpers::prefetch_torrent_import_metadata(
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        meta_type,
+        &meta_id,
+        name,
+        None,
+        &file_rows,
+    )
+    .await;
+    let media_id = resolve_media(state, &meta_id, meta_type, name, data, Some(&prefetch)).await;
+
     let mut base = crate::db::StreamStoreBase::from_parsed(
         name.to_string(),
         data_str(data, "indexer")
@@ -481,6 +507,37 @@ async fn process_nzb(
         .await
         .map_err(|e| ImportProcessError::Other(e.to_string()))?;
     let stream_id = result.stream_id().0;
+
+    if !file_rows.is_empty() {
+        import_helpers::insert_torrent_import_files(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            stream_id,
+            meta_type,
+            media_id,
+            &file_rows,
+            None,
+            &prefetch,
+        )
+        .await
+        .map_err(|e| {
+            if e.contains("Adult content") {
+                ImportProcessError::AdultContent
+            } else {
+                ImportProcessError::Other(e)
+            }
+        })?;
+    }
+
+    if let Some(mid) = media_id
+        && meta_type == "series"
+    {
+        let fallback = data_str(data, "title").unwrap_or(name);
+        import_helpers::ensure_series_episode_metadata(&state.pool, mid as i64, &file_rows, fallback)
+            .await;
+    }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
 

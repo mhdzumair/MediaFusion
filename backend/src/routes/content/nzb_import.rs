@@ -210,6 +210,7 @@ async fn insert_usenet_stream(
     group_name: Option<&str>,
     parsed: &parser::ParsedTitle,
     media_id: Option<i64>,
+    media_type: crate::db::MediaType,
     uploader: &str,
     uploader_user_id: Option<i64>,
     is_public: bool,
@@ -232,14 +233,11 @@ async fn insert_usenet_stream(
     };
 
     let opts = if let Some(mid) = media_id {
-        crate::db::StoreStreamOpts::user_import(
-            crate::db::MediaId(mid as i32),
-            crate::db::MediaType::Movie,
-        )
+        crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), media_type)
     } else {
         crate::db::StoreStreamOpts {
             media_id: crate::db::MediaId(0),
-            media_type: crate::db::MediaType::Movie,
+            media_type,
             season: None,
             episode: None,
             episode_end: None,
@@ -841,6 +839,27 @@ async fn do_nzb_import(
         None
     };
 
+    let media_type = crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
+
+    let mut file_rows: Vec<serde_json::Value> = info
+        .files
+        .iter()
+        .enumerate()
+        .map(|(idx, f)| {
+            json!({
+                "index": idx,
+                "filename": f.subject,
+                "size": f.size,
+            })
+        })
+        .collect();
+    if media_type == crate::db::MediaType::Series {
+        if file_rows.is_empty() {
+            file_rows.push(json!({"index": 0, "filename": name, "size": info.total_size}));
+        }
+        super::import_helpers::enrich_series_file_episodes(&mut file_rows, name);
+    }
+
     let stream_id = match insert_usenet_stream(
         &state.pool,
         &info.nzb_guid,
@@ -852,6 +871,7 @@ async fn do_nzb_import(
         info.group.as_deref(),
         &parsed,
         media_id,
+        media_type,
         &uploader_name,
         uploader_user_id,
         auto_approve,
@@ -869,18 +889,41 @@ async fn do_nzb_import(
         }
     };
 
-    let file_data: Vec<serde_json::Value> = info
-        .files
-        .iter()
-        .enumerate()
-        .map(|(idx, f)| {
-            json!({
-                "index": idx,
-                "filename": f.subject,
-                "size": f.size,
-            })
-        })
-        .collect();
+    if !file_rows.is_empty() {
+        let prefetch = super::import_helpers::prefetch_torrent_import_metadata(
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            meta_type,
+            &effective_meta_id,
+            name,
+            None,
+            &file_rows,
+        )
+        .await;
+        if let Err(e) = super::import_helpers::insert_torrent_import_files(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            stream_id as i32,
+            meta_type,
+            media_id.map(|m| m as i32),
+            &file_rows,
+            None,
+            &prefetch,
+        )
+        .await
+        {
+            tracing::warn!("nzb import file linking failed: {e}");
+        }
+        if let (Some(mid), true) = (media_id, media_type == crate::db::MediaType::Series) {
+            super::import_helpers::ensure_series_episode_metadata(&state.pool, mid, &file_rows, name)
+                .await;
+        }
+    }
+
+    let file_data = file_rows.clone();
 
     let data = serde_json::json!({
         "name": name,
