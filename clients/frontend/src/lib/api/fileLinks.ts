@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import type { BulkFileAnnotationRequest, FileAnnotationResponse } from '@/lib/fileAnnotation'
 
 export interface FileLink {
   file_id: number
@@ -122,6 +123,14 @@ export const fileLinksApi = {
    */
   updateFileLinks: async (request: BulkFileLinkUpdateRequest): Promise<FileLinkUpdateResponse> => {
     return apiClient.put<FileLinkUpdateResponse>('/stream-links/files', request)
+  },
+
+  /**
+   * Bulk annotate episode links in a single request.
+   * Auto-applies for moderators and trusted contributors; otherwise creates one pending suggestion.
+   */
+  annotateFiles: async (request: BulkFileAnnotationRequest): Promise<FileAnnotationResponse> => {
+    return apiClient.put<FileAnnotationResponse>('/stream-links/files/annotate', request)
   },
 
   /**

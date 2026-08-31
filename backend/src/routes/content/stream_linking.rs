@@ -8,6 +8,7 @@
 ///   GET    /media/{media_id}                             → get_streams_for_media
 ///   GET    /search                                       → search_unlinked_streams       (moderator)
 ///   PUT    /files                                        → update_file_links             (moderator)
+///   PUT    /files/annotate                               → annotate_files                (auth)
 ///   GET    /files/{stream_id}                            → get_stream_file_links         (auth)
 ///   GET    /stream/{stream_id}/files                     → get_stream_files_for_annotation (auth)
 ///   GET    /needs-annotation                             → get_streams_needing_annotation (moderator)
@@ -26,7 +27,14 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
+use uuid::Uuid;
 
+use super::file_annotation::{
+    apply_file_annotation_updates, resolve_annotation_media_id, BulkFileAnnotationRequest,
+    FileAnnotationUpdate,
+};
+use super::stream_suggestions::user_can_auto_approve;
+use crate::db::stream_store::stream_file_display_name;
 use crate::state::AppState;
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -629,94 +637,136 @@ pub async fn update_file_links(
             .into_response();
     }
 
-    let media_type: Option<crate::db::MediaType> =
-        sqlx::query_scalar("SELECT type FROM media WHERE id = $1")
-            .bind(body.media_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
+    let media_id = match resolve_annotation_media_id(&state.pool, body.stream_id, Some(body.media_id)).await
+    {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
 
-    match media_type {
+    let updates: Vec<FileAnnotationUpdate> = body
+        .updates
+        .into_iter()
+        .map(|u| FileAnnotationUpdate {
+            file_id: u.file_id,
+            clear: false,
+            season_number: u.season_number,
+            episode_number: u.episode_number,
+            episode_end: u.episode_end,
+        })
+        .collect();
+
+    let result =
+        apply_file_annotation_updates(&state.pool, body.stream_id, media_id, &updates).await;
+
+    Json(json!({
+        "updated": result.updated,
+        "failed": result.failed,
+        "errors": result.errors,
+    }))
+    .into_response()
+}
+
+/// PUT /api/v1/stream-links/files/annotate  (auth)
+pub async fn annotate_files(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<BulkFileAnnotationRequest>,
+) -> Response {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
         None => {
             return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"detail": "Media not found"})),
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
             )
                 .into_response();
         }
-        Some(crate::db::MediaType::Series) => {}
-        Some(_) => {
-            return (StatusCode::BAD_REQUEST, Json(json!({"detail": "File annotation updates are only supported for series media"}))).into_response();
-        }
+    };
+
+    if body.updates.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "No file updates provided"})),
+        )
+            .into_response();
     }
 
-    let mut updated = 0i64;
-    let mut failed = 0i64;
-    let mut errors: Vec<String> = Vec::new();
-
-    for update in &body.updates {
-        // Verify file belongs to this stream
-        let file_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM stream_file WHERE id = $1 AND stream_id = $2)",
-        )
-        .bind(update.file_id)
-        .bind(body.stream_id)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(false);
-
-        if !file_exists {
-            errors.push(format!("File {} not found in this stream", update.file_id));
-            failed += 1;
-            continue;
-        }
-
-        // Check if link exists
-        let existing_link: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM file_media_link WHERE file_id = $1 AND media_id = $2",
-        )
-        .bind(update.file_id)
-        .bind(body.media_id)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
-
-        let result = if let Some(link_id) = existing_link {
-            sqlx::query(
-                "UPDATE file_media_link SET season_number = $1, episode_number = $2, episode_end = $3, updated_at = NOW() WHERE id = $4",
-            )
-            .bind(update.season_number)
-            .bind(update.episode_number)
-            .bind(update.episode_end)
-            .bind(link_id)
-            .execute(&state.pool)
+    let stream_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(body.stream_id)
+            .fetch_one(&state.pool)
             .await
-        } else {
-            sqlx::query(
-                "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end, created_at, is_primary, confidence, link_source) VALUES ($1, $2, $3, $4, $5, NOW(), true, 1.0, 'MANUAL')",
-            )
-            .bind(update.file_id)
-            .bind(body.media_id)
-            .bind(update.season_number)
-            .bind(update.episode_number)
-            .bind(update.episode_end)
-            .execute(&state.pool)
-            .await
-        };
+            .unwrap_or(false);
 
-        match result {
-            Ok(_) => updated += 1,
-            Err(e) => {
-                errors.push(format!("Failed to update file {}: {}", update.file_id, e));
-                failed += 1;
-            }
-        }
+    if !stream_exists {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
+    }
+
+    let media_id = match resolve_annotation_media_id(&state.pool, body.stream_id, body.media_id).await
+    {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    let can_auto_approve = user_can_auto_approve(&state.pool, user_id).await;
+
+    if can_auto_approve {
+        let result =
+            apply_file_annotation_updates(&state.pool, body.stream_id, media_id, &body.updates)
+                .await;
+
+        return Json(json!({
+            "applied": true,
+            "updated": result.updated,
+            "failed": result.failed,
+            "errors": result.errors,
+            "suggestion_id": serde_json::Value::Null,
+        }))
+        .into_response();
+    }
+
+    let suggestion_id = Uuid::new_v4().to_string();
+    let suggested_value = json!({
+        "media_id": media_id,
+        "updates": body.updates,
+    })
+    .to_string();
+    let reason = body.reason.unwrap_or_else(|| {
+        format!(
+            "Bulk episode link correction ({} files)",
+            body.updates.len()
+        )
+    });
+
+    if let Err(e) = sqlx::query(
+        r#"INSERT INTO stream_suggestions
+               (id, user_id, stream_id, suggestion_type, field_name,
+                current_value, suggested_value, reason, status, created_at)
+           VALUES ($1, $2, $3, 'field_correction', 'episode_link:bulk', NULL, $4, $5, 'pending', NOW())"#,
+    )
+    .bind(&suggestion_id)
+    .bind(user_id)
+    .bind(body.stream_id)
+    .bind(&suggested_value)
+    .bind(&reason)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!("annotate_files: failed to create bulk suggestion: {e}");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
     Json(json!({
-        "updated": updated,
-        "failed": failed,
-        "errors": errors,
+        "applied": false,
+        "updated": 0,
+        "failed": 0,
+        "errors": [],
+        "suggestion_id": suggestion_id,
+        "pending_review": true,
     }))
     .into_response()
 }
@@ -788,17 +838,23 @@ pub async fn get_stream_file_links(
             continue;
         }
 
-        let display_name = filename
-            .clone()
-            .unwrap_or_else(|| format!("File {}", file_index.unwrap_or(file_id)));
+        let season_number = link.as_ref().and_then(|l| l.0);
+        let episode_number = link.as_ref().and_then(|l| l.1);
+        let display_name = stream_file_display_name(
+            filename.as_deref(),
+            file_index,
+            file_id,
+            season_number,
+            episode_number,
+        );
 
         files.push(json!({
             "file_id": file_id,
             "file_name": display_name,
             "file_index": file_index,
             "size": size,
-            "season_number": link.as_ref().and_then(|l| l.0),
-            "episode_number": link.as_ref().and_then(|l| l.1),
+            "season_number": season_number,
+            "episode_number": episode_number,
             "episode_end": link.as_ref().and_then(|l| l.2),
         }));
     }
@@ -883,15 +939,22 @@ pub async fn get_stream_files_for_annotation(
         .await
         .unwrap_or(None);
 
-        let display_name =
-            filename.unwrap_or_else(|| format!("File {}", file_index.unwrap_or(file_id)));
+        let season_number = link.as_ref().and_then(|l| l.0);
+        let episode_number = link.as_ref().and_then(|l| l.1);
+        let display_name = stream_file_display_name(
+            filename.as_deref(),
+            file_index,
+            file_id,
+            season_number,
+            episode_number,
+        );
 
         files.push(json!({
             "file_id": file_id,
             "file_name": display_name,
             "size": size,
-            "season_number": link.as_ref().and_then(|l| l.0),
-            "episode_number": link.as_ref().and_then(|l| l.1),
+            "season_number": season_number,
+            "episode_number": episode_number,
             "episode_end": link.as_ref().and_then(|l| l.2),
         }));
     }

@@ -4,6 +4,7 @@ pub mod contribution_processors;
 pub mod contributions;
 pub mod discover;
 pub mod episode_suggestions;
+pub mod file_annotation;
 pub mod http_import;
 pub mod image_upload;
 pub mod import_helpers;

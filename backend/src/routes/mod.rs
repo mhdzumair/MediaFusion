@@ -384,6 +384,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/metadata/user/{media_id}/episodes/{episode_id}/admin", delete(content::user_metadata::admin_delete_episode))
         .route("/api/v1/metadata/user/{media_id}/seasons/{season_number}", delete(content::user_metadata::delete_season))
         .route("/api/v1/metadata/user/{media_id}/seasons/{season_number}/admin", delete(content::user_metadata::admin_delete_season))
+        .route("/api/v1/metadata/user/{media_id}/seasons/bulk-delete/admin", post(content::user_metadata::admin_bulk_delete_seasons))
+        .route("/api/v1/metadata/user/{media_id}/episodes/bulk-delete/admin", post(content::user_metadata::admin_bulk_delete_episodes))
         // ── Metadata operations ───────────────────────────────────────────────
         .route("/api/v1/metadata/search", get(content::metadata_ops::search_metadata))
         .route("/api/v1/metadata/search/matches", post(content::metadata_ops::search_media_matches_metadata))
@@ -412,6 +414,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/stream-links/bulk", post(content::stream_linking::create_bulk_stream_links))
         .route("/api/v1/stream-links/search", get(content::stream_linking::search_unlinked_streams))
         .route("/api/v1/stream-links/files", put(content::stream_linking::update_file_links))
+        .route("/api/v1/stream-links/files/annotate", put(content::stream_linking::annotate_files))
         .route("/api/v1/stream-links/needs-annotation", get(content::stream_linking::get_streams_needing_annotation))
         .route("/api/v1/stream-links/needs-annotation/{stream_id}/media/{media_id}/dismiss", post(content::stream_linking::dismiss_annotation_request))
         .route("/api/v1/stream-links/{link_id}", delete(content::stream_linking::delete_stream_link))

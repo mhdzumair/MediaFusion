@@ -21,8 +21,10 @@ import { Edit, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo, Link2 } from
 import { useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
-import { useBlockMyStream, useCreateStreamSuggestion, useDeleteStream } from '@/hooks'
+import { useBlockMyStream, useDeleteStream } from '@/hooks'
+import { useAnnotateFiles } from '@/hooks/useFileLinks'
 import type { CatalogStreamInfo } from '@/lib/api'
+import { buildEpisodeAnnotationUpdates } from '@/lib/fileAnnotation'
 import { highlightKeywords, keywordBlockTitle } from '@/lib/highlightKeywords'
 import { StreamEditSheet } from './StreamEditSheet'
 import { StreamRelinkButton } from './StreamRelinkButton'
@@ -40,6 +42,7 @@ interface StreamCardProps {
   fileCount?: number
   onDeleted?: () => void
   mediaType?: 'movie' | 'series'
+  mediaId?: number
   isLastPlayed?: boolean // Highlight this stream as the last played
   /** Actions-only mode for embedding inside poster cards */
   embedded?: boolean
@@ -66,6 +69,7 @@ export function StreamCard({
   fileCount,
   onDeleted,
   mediaType = 'movie',
+  mediaId,
   isLastPlayed = false,
   embedded = false,
 }: StreamCardProps) {
@@ -91,7 +95,7 @@ export function StreamCard({
   const blockStream = useBlockTorrentStream()
   const blockMyStream = useBlockMyStream()
   const deleteStream = useDeleteStream()
-  const createSuggestion = useCreateStreamSuggestion()
+  const annotateFiles = useAnnotateFiles()
 
   const isDeleting = blockStream.isPending || blockMyStream.isPending || deleteStream.isPending
 
@@ -162,86 +166,22 @@ export function StreamCard({
 
       setIsSavingAnnotation(true)
       try {
-        // Submit each modified field as a suggestion
-        for (const editedFile of editedFiles) {
-          const originalFile = annotationFiles.find((f) => f.file_id === editedFile.file_id)
-          if (!originalFile) continue
+        const updates = buildEpisodeAnnotationUpdates(editedFiles, annotationFiles)
+        if (updates.length === 0) return
 
-          // Excluded file: one suggestion clears all episode link fields at once.
-          if (!editedFile.included) {
-            const hadLink =
-              originalFile.season_number !== null ||
-              originalFile.episode_number !== null ||
-              originalFile.episode_end !== null
-            if (hadLink) {
-              await createSuggestion.mutateAsync({
-                streamId: stream.id,
-                data: {
-                  suggestion_type: 'field_correction',
-                  field_name: `episode_link:${editedFile.file_id}:clear`,
-                  current_value: [
-                    originalFile.season_number ?? '',
-                    originalFile.episode_number ?? '',
-                    originalFile.episode_end ?? '',
-                  ].join('/'),
-                  suggested_value: '',
-                  reason: `Remove episode link for file: ${editedFile.file_name}`,
-                },
-              })
-            }
-            continue
-          }
+        await annotateFiles.mutateAsync({
+          stream_id: stream.id,
+          media_id: mediaId,
+          updates,
+          reason: `Episode link correction for ${updates.length} files in ${rawStreamName}`,
+        })
 
-          if (!editedFile.isModified) continue
-
-          // Check which fields changed and submit suggestions
-          if (editedFile.season_number !== originalFile.season_number) {
-            await createSuggestion.mutateAsync({
-              streamId: stream.id,
-              data: {
-                suggestion_type: 'field_correction',
-                field_name: `episode_link:${editedFile.file_id}:season_number`,
-                current_value: String(originalFile.season_number ?? ''),
-                suggested_value: String(editedFile.season_number ?? ''),
-                reason: `Episode link fix for file: ${editedFile.file_name}`,
-              },
-            })
-          }
-
-          if (editedFile.episode_number !== originalFile.episode_number) {
-            await createSuggestion.mutateAsync({
-              streamId: stream.id,
-              data: {
-                suggestion_type: 'field_correction',
-                field_name: `episode_link:${editedFile.file_id}:episode_number`,
-                current_value: String(originalFile.episode_number ?? ''),
-                suggested_value: String(editedFile.episode_number ?? ''),
-                reason: `Episode link fix for file: ${editedFile.file_name}`,
-              },
-            })
-          }
-
-          if (editedFile.episode_end !== originalFile.episode_end) {
-            await createSuggestion.mutateAsync({
-              streamId: stream.id,
-              data: {
-                suggestion_type: 'field_correction',
-                field_name: `episode_link:${editedFile.file_id}:episode_end`,
-                current_value: String(originalFile.episode_end ?? ''),
-                suggested_value: String(editedFile.episode_end ?? ''),
-                reason: `Episode link fix for file: ${editedFile.file_name}`,
-              },
-            })
-          }
-        }
-
-        // Refresh the stream data
         onDeleted?.()
       } finally {
         setIsSavingAnnotation(false)
       }
     },
-    [stream.id, annotationFiles, createSuggestion, onDeleted],
+    [stream.id, annotationFiles, annotateFiles, mediaId, onDeleted, rawStreamName],
   )
 
   const resolvedFileCount = fileCount ?? stream.file_count ?? 0

@@ -447,6 +447,40 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
+/// Whether a user can have stream suggestions auto-approved and applied immediately.
+pub async fn user_can_auto_approve(pool: &sqlx::PgPool, user_id: i32) -> bool {
+    let role = crate::db::get_user_role(pool, user_id).await;
+    if role.is_some_and(crate::db::is_mod_or_admin) {
+        return true;
+    }
+
+    let user_points: i32 =
+        sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None)
+            .unwrap_or(0);
+
+    let auto_threshold: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(auto_approval_threshold, 100) FROM contribution_settings WHERE id = 'default'",
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or(100);
+
+    let allow_auto: bool = sqlx::query_scalar(
+        "SELECT COALESCE(allow_auto_approval, true) FROM contribution_settings WHERE id = 'default'",
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or(true);
+
+    allow_auto && user_points >= auto_threshold
+}
+
 /// POST /api/v1/streams/{stream_id}/suggest
 pub async fn create_stream_suggestion(
     headers: HeaderMap,
@@ -481,33 +515,7 @@ pub async fn create_stream_suggestion(
     }
 
     // Check auto-approval eligibility
-    let role = crate::db::get_user_role(&state.pool, user_id).await;
-    let user_points: i32 =
-        sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None)
-            .unwrap_or(0);
-
-    let auto_threshold: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(auto_approval_threshold, 100) FROM contribution_settings WHERE id = 'default'",
-    )
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None)
-    .unwrap_or(100);
-
-    let allow_auto: bool = sqlx::query_scalar(
-        "SELECT COALESCE(allow_auto_approval, true) FROM contribution_settings WHERE id = 'default'",
-    )
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None)
-    .unwrap_or(true);
-
-    let can_auto_approve = role.is_some_and(crate::db::is_mod_or_admin)
-        || (allow_auto && user_points >= auto_threshold);
+    let can_auto_approve = user_can_auto_approve(&state.pool, user_id).await;
 
     let initial_status = if can_auto_approve {
         "auto_approved"
@@ -974,6 +982,26 @@ pub async fn apply_stream_field_change(
     };
 
     // Handle episode_link:<file_id>:<field> corrections
+    if field == "episode_link:bulk" {
+        if let Some(v) = value {
+            #[derive(Deserialize)]
+            struct BulkEpisodeLinkPayload {
+                media_id: i32,
+                updates: Vec<super::file_annotation::FileAnnotationUpdate>,
+            }
+            if let Ok(payload) = serde_json::from_str::<BulkEpisodeLinkPayload>(v) {
+                super::file_annotation::apply_file_annotation_updates(
+                    pool,
+                    stream_id,
+                    payload.media_id,
+                    &payload.updates,
+                )
+                .await;
+            }
+        }
+        return;
+    }
+
     if field.starts_with("episode_link:") {
         let parts: Vec<&str> = field.splitn(3, ':').collect();
         if parts.len() == 3

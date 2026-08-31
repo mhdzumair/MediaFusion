@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fileLinksApi, type StreamsNeedingAnnotationParams, type BulkFileLinkUpdateRequest } from '@/lib/api/fileLinks'
+import type { BulkFileAnnotationRequest } from '@/lib/fileAnnotation'
+import { streamSuggestionKeys } from './useStreamSuggestions'
 
 // Query keys for cache management
 export const fileLinksKeys = {
@@ -47,6 +49,27 @@ export function useUpdateFileLinks() {
       queryClient.invalidateQueries({
         queryKey: fileLinksKeys.streamFiles(variables.stream_id, variables.media_id),
       })
+    },
+  })
+}
+
+/**
+ * Hook to bulk annotate file episode links in a single API call.
+ */
+export function useAnnotateFiles() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: BulkFileAnnotationRequest) => fileLinksApi.annotateFiles(request),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: fileLinksKeys.all })
+      if (variables.media_id) {
+        queryClient.invalidateQueries({
+          queryKey: fileLinksKeys.streamFiles(variables.stream_id, variables.media_id),
+        })
+      }
+      queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.pending() })
+      queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.stats() })
     },
   })
 }
