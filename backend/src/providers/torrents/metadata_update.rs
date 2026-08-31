@@ -170,8 +170,10 @@ pub async fn refresh_racing_episode_metadata(pool: &PgPool, info_hash: &str, sea
 /// `file_media_link`) so they show up for manual annotation instead of being
 /// silently dropped.
 ///
-/// - `season`: `None` → movie (pick largest video file only)
-/// - `season`: `Some(s)` → series (detect episode in each file, link all)
+/// - `season`: `None` and the release name itself carries no season → movie
+///   (pick largest video file only)
+/// - `season`: `Some(s)`, or the release name parses to a season on its own →
+///   series (detect episode in each file, link all)
 pub async fn update_metadata(
     pool: &PgPool,
     redis: Option<&fred::clients::Client>,
@@ -203,11 +205,18 @@ pub async fn update_metadata(
         return;
     }
 
-    let stream_name = if season.is_some() {
-        stream_name_for_hash(pool, info_hash).await
-    } else {
-        None
-    };
+    let stream_name = stream_name_for_hash(pool, info_hash).await;
+
+    // The caller may not know the season/episode being played (e.g. a
+    // pre-resolved-filename playback link carries no season/episode
+    // context) even though this is clearly a series torrent — the release
+    // name itself often still gives it away (e.g. "Show.S01E06....mkv").
+    // Fall back to that before assuming "no season" means "movie".
+    let season = season.or_else(|| {
+        stream_name
+            .as_deref()
+            .and_then(|name| crate::parser::parse_title(name).seasons.first().copied())
+    });
 
     let mut any_unmapped = false;
 
