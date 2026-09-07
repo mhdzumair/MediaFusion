@@ -1,3 +1,4 @@
+import { detectEpisodeMetadata } from '../utils/episodeMetadata'
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
   Dialog,
@@ -53,6 +54,8 @@ interface ImportFileAnnotationDialogProps {
   defaultMetaType?: 'movie' | 'series'
   /** Default release date applied to sports episode annotations */
   defaultReleaseDate?: string
+  initialAnnotations?: FileAnnotation[]
+  requireEpisodeMapping?: boolean
 }
 
 // Extract just the filename from a full path
@@ -63,7 +66,7 @@ function getFilenameOnly(fullPath?: string | null): string {
 }
 
 function resolveTorrentFilePath(file: TorrentFile): string {
-  return file.filename || file.path || ''
+  return file.path || file.filename || ''
 }
 
 // Get folder structure (everything except the filename)
@@ -71,57 +74,6 @@ function getFolderPath(fullPath: string): string {
   const parts = fullPath.split('/')
   if (parts.length <= 1) return ''
   return parts.slice(0, -1).join('/') + '/'
-}
-
-function detectEpisodeMetadata(filename: string): {
-  season_number: number | null
-  episode_number: number | null
-  episode_end: number | null
-} {
-  const basename = getFilenameOnly(filename).replace(/\.[^/.]+$/, '')
-  const normalized = basename.replace(/[._-]/g, ' ')
-
-  const seasonEpisodeMatch = normalized.match(/\bS(\d{1,3})\s*E(\d{1,3})(?:\s*(?:E|[-~])\s*(\d{1,3}))?\b/i)
-  if (seasonEpisodeMatch) {
-    return {
-      season_number: parseInt(seasonEpisodeMatch[1], 10),
-      episode_number: parseInt(seasonEpisodeMatch[2], 10),
-      episode_end: seasonEpisodeMatch[3] ? parseInt(seasonEpisodeMatch[3], 10) : null,
-    }
-  }
-
-  const xPatternMatch = normalized.match(/\b(\d{1,3})x(\d{1,3})(?:\s*-\s*(\d{1,3}))?\b/i)
-  if (xPatternMatch) {
-    return {
-      season_number: parseInt(xPatternMatch[1], 10),
-      episode_number: parseInt(xPatternMatch[2], 10),
-      episode_end: xPatternMatch[3] ? parseInt(xPatternMatch[3], 10) : null,
-    }
-  }
-
-  const seasonTextMatch = normalized.match(/\bseason\s*(\d{1,3})\D+episode\s*(\d{1,3})(?:\D+(\d{1,3}))?\b/i)
-  if (seasonTextMatch) {
-    return {
-      season_number: parseInt(seasonTextMatch[1], 10),
-      episode_number: parseInt(seasonTextMatch[2], 10),
-      episode_end: seasonTextMatch[3] ? parseInt(seasonTextMatch[3], 10) : null,
-    }
-  }
-
-  const episodeOnlyMatch = normalized.match(/\bE(?:P)?\s*(\d{1,3})(?:\s*[-~]\s*(\d{1,3}))?\b/i)
-  if (episodeOnlyMatch) {
-    return {
-      season_number: 1,
-      episode_number: parseInt(episodeOnlyMatch[1], 10),
-      episode_end: episodeOnlyMatch[2] ? parseInt(episodeOnlyMatch[2], 10) : null,
-    }
-  }
-
-  return {
-    season_number: null,
-    episode_number: null,
-    episode_end: null,
-  }
 }
 
 // Format file size
@@ -154,6 +106,8 @@ export function ImportFileAnnotationDialog({
   allowMultiContent = false,
   defaultMetaType = 'movie',
   defaultReleaseDate,
+  initialAnnotations,
+  requireEpisodeMapping = false,
 }: ImportFileAnnotationDialogProps) {
   const [editedFiles, setEditedFiles] = useState<EditedFile[]>([])
   const [highlightedIndices, setHighlightedIndices] = useState<Set<number>>(new Set())
@@ -175,12 +129,16 @@ export function ImportFileAnnotationDialog({
           const fileWithExtras = f as TorrentFile & { episode_title?: string; release_date?: string }
           const filePath = resolveTorrentFilePath(f)
           const inferredEpisode = detectEpisodeMetadata(filePath)
+          const savedAnnotation = initialAnnotations?.find((annotation) => annotation.index === f.index)
           return {
             filename: getFilenameOnly(filePath) || filePath,
             size: f.size,
             index: f.index ?? idx,
-            season_number: f.season_number ?? inferredEpisode.season_number ?? (isSports ? 1 : null),
-            episode_number: f.episode_number ?? inferredEpisode.episode_number ?? null,
+            // Analysis can contain a fallback S01E01 from an older parser.  An
+            // explicit SxxExx/EPxx token in the filename is more authoritative.
+            // Saved annotations are spread below and always remain authoritative.
+            season_number: inferredEpisode.season_number ?? f.season_number ?? (isSports ? 1 : null),
+            episode_number: inferredEpisode.episode_number ?? f.episode_number ?? null,
             episode_end: inferredEpisode.episode_end,
             included: true,
             isModified: false,
@@ -194,13 +152,14 @@ export function ImportFileAnnotationDialog({
             meta_title: undefined,
             meta_poster: undefined,
             meta_type: undefined,
+            ...savedAnnotation,
           }
         }),
       )
       // Reset mode when dialog opens
       setAnnotationMode('episode')
     }
-  }, [open, files, isSports, defaultReleaseDate])
+  }, [open, files, isSports, defaultReleaseDate, initialAnnotations])
 
   // Update file metadata link
   const updateFileMetadata = useCallback((index: number, result: CombinedSearchResult | null) => {
@@ -339,32 +298,42 @@ export function ImportFileAnnotationDialog({
   )
 
   const handleConfirm = () => {
-    const annotatedFiles: FileAnnotation[] = editedFiles
-      .filter((f) => f.included)
-      .map((f) => ({
-        filename: f.filename,
-        size: f.size,
-        index: f.index,
-        season_number: annotationMode === 'episode' ? f.season_number : null,
-        episode_number: annotationMode === 'episode' ? f.episode_number : null,
-        episode_end: annotationMode === 'episode' ? f.episode_end : null,
-        included: f.included,
-        title: isSports ? f.title : undefined,
-        overview: isSports ? f.overview : undefined,
-        thumbnail: isSports ? f.thumbnail : undefined,
-        release_date: isSports ? f.release_date : undefined,
-        // Multi-content fields
-        meta_id: annotationMode === 'multi-content' ? f.meta_id : undefined,
-        meta_title: annotationMode === 'multi-content' ? f.meta_title : undefined,
-        meta_poster: annotationMode === 'multi-content' ? f.meta_poster : undefined,
-        meta_type: annotationMode === 'multi-content' ? f.meta_type : undefined,
-      }))
+    const annotatedFiles: FileAnnotation[] = editedFiles.map((f) => ({
+      filename: f.filename,
+      size: f.size,
+      index: f.index,
+      season_number: annotationMode === 'episode' ? f.season_number : null,
+      episode_number: annotationMode === 'episode' ? f.episode_number : null,
+      episode_end: annotationMode === 'episode' ? f.episode_end : null,
+      included: f.included,
+      title: isSports ? f.title : undefined,
+      overview: isSports ? f.overview : undefined,
+      thumbnail: isSports ? f.thumbnail : undefined,
+      release_date: isSports ? f.release_date : undefined,
+      // Multi-content fields
+      meta_id: annotationMode === 'multi-content' ? f.meta_id : undefined,
+      meta_title: annotationMode === 'multi-content' ? f.meta_title : undefined,
+      meta_poster: annotationMode === 'multi-content' ? f.meta_poster : undefined,
+      meta_type: annotationMode === 'multi-content' ? f.meta_type : undefined,
+    }))
     onConfirm(annotatedFiles)
   }
 
   // Count files with metadata links
   const linkedCount = useMemo(() => editedFiles.filter((f) => f.included && f.meta_id).length, [editedFiles])
 
+  const invalidMapping =
+    requireEpisodeMapping &&
+    editedFiles.some(
+      (file) =>
+        file.included &&
+        (file.season_number == null ||
+          file.season_number < 0 ||
+          file.episode_number == null ||
+          file.episode_number <= 0 ||
+          (file.episode_end != null &&
+            (file.episode_end < file.episode_number || file.episode_end - file.episode_number > 1000))),
+    )
   const includedCount = editedFiles.filter((f) => f.included).length
 
   return (
@@ -784,6 +753,11 @@ export function ImportFileAnnotationDialog({
         </ScrollArea>
 
         {/* Footer */}
+        {invalidMapping && (
+          <p role="alert" className="px-6 text-sm text-destructive">
+            Set a valid season and episode for every included file. Season 0 is supported for specials.
+          </p>
+        )}
         <DialogFooter className="px-6 py-4 border-t bg-muted/30 flex-shrink-0">
           <div className="flex items-center justify-between w-full">
             <div className="text-sm text-muted-foreground">
@@ -801,7 +775,7 @@ export function ImportFileAnnotationDialog({
               </Button>
               <Button
                 onClick={handleConfirm}
-                disabled={includedCount === 0 || isLoading}
+                disabled={includedCount === 0 || isLoading || invalidMapping}
                 className="rounded-lg bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
               >
                 {isLoading ? (

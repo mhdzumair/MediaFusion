@@ -306,12 +306,26 @@ pub async fn analyze_nzb_file(
     };
 
     let mut file_bytes: Option<Bytes> = None;
+    let mut target_media_id: Option<i32> = None;
     let mut meta_type = String::from("movie");
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
-            Some("file") => {
+            Some("file") | Some("nzb_file") => {
                 file_bytes = field.bytes().await.ok();
+            }
+            Some("target_media_id") => {
+                target_media_id = match field.text().await.ok().and_then(|v| v.parse::<i32>().ok())
+                {
+                    Some(id) => Some(id),
+                    None => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"detail": "Invalid target media ID"})),
+                        )
+                            .into_response();
+                    }
+                };
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
@@ -320,6 +334,12 @@ pub async fn analyze_nzb_file(
         }
     }
 
+    if let Err((status, message)) =
+        super::import_helpers::validate_import_target(&state.pool, target_media_id, &meta_type)
+            .await
+    {
+        return (status, Json(json!({"detail": message}))).into_response();
+    }
     let bytes = match file_bytes {
         Some(b) => b,
         None => {
@@ -331,7 +351,14 @@ pub async fn analyze_nzb_file(
         }
     };
 
-    analyze_nzb_bytes(&state, &bytes, &meta_type, UserId::from_auth_id(user_id)).await
+    analyze_nzb_bytes(
+        &state,
+        &bytes,
+        &meta_type,
+        UserId::from_auth_id(user_id),
+        target_media_id.is_some(),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -385,7 +412,14 @@ pub async fn analyze_nzb_url(
     };
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie").to_string();
-    analyze_nzb_bytes(&state, &bytes, &meta_type, UserId::from_auth_id(user_id)).await
+    analyze_nzb_bytes(
+        &state,
+        &bytes,
+        &meta_type,
+        UserId::from_auth_id(user_id),
+        false,
+    )
+    .await
 }
 
 async fn analyze_nzb_bytes(
@@ -393,6 +427,7 @@ async fn analyze_nzb_bytes(
     bytes: &Bytes,
     meta_type: &str,
     user_id: Option<UserId>,
+    skip_search: bool,
 ) -> Response {
     let info = match parse_nzb(bytes.as_ref()) {
         Ok(i) => i,
@@ -410,14 +445,18 @@ async fn analyze_nzb_bytes(
 
     let parsed = parser::parse_title(&info.title);
     let search_title = parsed.title.as_deref().unwrap_or(&info.title);
-    let matches = super::import_helpers::search_analyze_matches(
-        state,
-        user_id,
-        search_title,
-        parsed.year,
-        meta_type,
-    )
-    .await;
+    let matches = if skip_search {
+        Vec::new()
+    } else {
+        super::import_helpers::search_analyze_matches(
+            state,
+            user_id,
+            search_title,
+            parsed.year,
+            meta_type,
+        )
+        .await
+    };
 
     (
         StatusCode::OK,
@@ -480,6 +519,19 @@ pub async fn analyze_nzb_url_for_bot(
     resp
 }
 
+#[derive(Default)]
+struct NzbImportOptions {
+    target_media_id: Option<i32>,
+    files: Option<Vec<super::torrent_import::FileEntry>>,
+    resolution: Option<String>,
+    quality: Option<String>,
+    codec: Option<String>,
+    languages: Vec<String>,
+    audio: Vec<String>,
+    hdr: Vec<String>,
+    catalogs: Vec<String>,
+}
+
 pub async fn import_nzb(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -522,6 +574,7 @@ pub async fn import_nzb(
     let mut file_bytes: Option<Bytes> = None;
     let mut meta_type = String::from("movie");
     let mut meta_id: Option<String> = None;
+    let mut options = NzbImportOptions::default();
     let mut title: Option<String> = None;
     let mut indexer: Option<String> = None;
     let mut force_import = false;
@@ -533,11 +586,88 @@ pub async fn import_nzb(
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
-            Some("file") => {
+            Some("file") | Some("nzb_file") => {
                 file_bytes = field.bytes().await.ok();
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
+            }
+            Some("target_media_id") => {
+                options.target_media_id =
+                    match field.text().await.ok().and_then(|v| v.parse::<i32>().ok()) {
+                        Some(id) => Some(id),
+                        None => {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"detail": "Invalid target media ID"})),
+                            )
+                                .into_response();
+                        }
+                    };
+            }
+            Some("file_data") => {
+                options.files = match field
+                    .text()
+                    .await
+                    .ok()
+                    .and_then(|v| serde_json::from_str(&v).ok())
+                {
+                    Some(files) => Some(files),
+                    None => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"detail": "Invalid file annotations"})),
+                        )
+                            .into_response();
+                    }
+                };
+            }
+            Some("audio") => {
+                options.audio = field
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }
+            Some("hdr") => {
+                options.hdr = field
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }
+            Some("catalogs") => {
+                options.catalogs = field
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }
+            Some("resolution") => options.resolution = field.text().await.ok(),
+            Some("quality") => options.quality = field.text().await.ok(),
+            Some("codec") => options.codec = field.text().await.ok(),
+            Some("languages") => {
+                options.languages = field
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
             }
             Some("meta_id") => {
                 meta_id = field.text().await.ok().filter(|s| !s.is_empty());
@@ -625,6 +755,7 @@ pub async fn import_nzb(
         is_privileged,
         auto_approve,
         resolved_is_anonymous,
+        options,
     )
     .await
 }
@@ -749,6 +880,7 @@ pub async fn import_nzb_url(
         is_privileged,
         auto_approve,
         resolved_is_anonymous,
+        NzbImportOptions::default(),
     )
     .await
 }
@@ -771,7 +903,28 @@ async fn do_nzb_import(
     is_privileged: bool,
     auto_approve: bool,
     resolved_is_anonymous: bool,
+    options: NzbImportOptions,
 ) -> Response {
+    let target_media_id = match super::import_helpers::validate_import_target(
+        &state.pool,
+        options.target_media_id,
+        meta_type,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err((status, message)) => {
+            return (status, Json(json!({"detail": message}))).into_response();
+        }
+    };
+    if target_media_id.is_some()
+        && let Err(message) = super::torrent_import::validate_target_files(
+            options.files.as_deref().unwrap_or_default(),
+            meta_type,
+        )
+    {
+        return (StatusCode::BAD_REQUEST, Json(json!({"detail": message}))).into_response();
+    }
     let name = title_override.unwrap_or(&info.title);
 
     // Adult content check
@@ -805,32 +958,55 @@ async fn do_nzb_import(
             .into_response();
     }
 
-    let parsed = parser::parse_title(name);
+    let mut parsed = parser::parse_title(&info.title);
+    if let Some(value) = options.resolution {
+        parsed.resolution = Some(value);
+    }
+    if let Some(value) = options.quality {
+        parsed.quality = Some(value);
+    }
+    if let Some(value) = options.codec {
+        parsed.codec = Some(value);
+    }
+    if !options.languages.is_empty() {
+        parsed.languages = options.languages;
+    }
 
-    let effective_meta_id = meta_id
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
+    if !options.audio.is_empty() {
+        parsed.audio = options.audio;
+    }
+    if !options.hdr.is_empty() {
+        parsed.hdr = options.hdr;
+    }
+
+    let effective_meta_id = target_media_id
+        .map(|id| format!("mf:{id}"))
+        .or_else(|| meta_id.filter(|s| !s.is_empty()).map(str::to_string))
         .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("nzb", &info.nzb_guid));
 
-    let media_id = super::import_helpers::resolve_media_for_import(
-        &state.pool,
-        &state.http,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
-        &effective_meta_id,
-        meta_type,
-        crate::scrapers::media_resolve::ImportMediaOverrides {
-            title: title_override.or(parsed.title.as_deref()),
-            poster,
-            background,
-            release_date,
-            year: parsed.year,
-        },
-        None,
-        state.config.poster_nsfw_enabled,
-    )
-    .await
-    .map(i64::from);
+    let media_id = if let Some(id) = target_media_id {
+        Some(i64::from(id))
+    } else {
+        super::import_helpers::resolve_media_for_import(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            &effective_meta_id,
+            meta_type,
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: title_override.or(parsed.title.as_deref()),
+                poster,
+                background,
+                release_date,
+                year: parsed.year,
+            },
+            None,
+            state.config.poster_nsfw_enabled,
+        )
+        .await
+        .map(i64::from)
+    };
 
     let source = indexer.unwrap_or("manual");
     let size = if info.total_size > 0 {
@@ -839,7 +1015,8 @@ async fn do_nzb_import(
         None
     };
 
-    let media_type = crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
 
     let mut file_rows: Vec<serde_json::Value> = info
         .files
@@ -853,6 +1030,9 @@ async fn do_nzb_import(
             })
         })
         .collect();
+    if let Some(files) = options.files {
+        file_rows = super::torrent_import::file_entries_as_json(&files);
+    }
     if media_type == crate::db::MediaType::Series {
         if file_rows.is_empty() {
             file_rows.push(json!({"index": 0, "filename": name, "size": info.total_size}));
@@ -918,11 +1098,36 @@ async fn do_nzb_import(
             tracing::warn!("nzb import file linking failed: {e}");
         }
         if let (Some(mid), true) = (media_id, media_type == crate::db::MediaType::Series) {
-            super::import_helpers::ensure_series_episode_metadata(&state.pool, mid, &file_rows, name)
-                .await;
+            super::import_helpers::ensure_series_episode_metadata(
+                &state.pool,
+                mid,
+                &file_rows,
+                name,
+            )
+            .await;
         }
     }
 
+    let _ = super::import_helpers::link_stream_languages(
+        &state.pool,
+        stream_id as i32,
+        &parsed.languages,
+    )
+    .await;
+    let _ = super::import_helpers::link_stream_audio_formats(
+        &state.pool,
+        stream_id as i32,
+        &parsed.audio,
+    )
+    .await;
+    let _ =
+        super::import_helpers::link_stream_hdr_formats(&state.pool, stream_id as i32, &parsed.hdr)
+            .await;
+    if let Some(id) = media_id {
+        let _ =
+            super::import_helpers::link_media_catalogs(&state.pool, id as i32, &options.catalogs)
+                .await;
+    }
     let file_data = file_rows.clone();
 
     let data = serde_json::json!({

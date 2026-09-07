@@ -1,3 +1,4 @@
+import { MediaStreamImport, type MediaStreamImportHandle } from './MediaStreamImport'
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { getContentDetailReturnUrl, getContentDetailReturnLabel } from '@/pages/Library/browseNavigation'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
@@ -602,7 +603,14 @@ function StreamActionDialog({
 
     setIsSavingFileLinks(true)
     try {
-      const originalFiles = fileLinks.length > 0 ? fileLinks : stream.episode_links || []
+      const originalFiles =
+        fileLinks.length > 0
+          ? fileLinks
+          : (stream.episode_links || []).map((file) => ({
+              ...file,
+              season_number: file.season_number ?? null,
+              episode_number: file.episode_number ?? null,
+            }))
       const updates = buildEpisodeAnnotationUpdates(editedFiles, originalFiles)
       if (updates.length === 0) return
 
@@ -1205,6 +1213,8 @@ function getProviderDisplayName(provider: StreamingProviderInfo): string {
 
 // Main Content Detail Page
 export function ContentDetailPage() {
+  const mediaImportRef = useRef<MediaStreamImportHandle>(null)
+  const [isImportBusy, setIsImportBusy] = useState(false)
   const { type, id } = useParams<{ type: string; id: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const catalogType = type as CatalogType
@@ -2340,6 +2350,23 @@ export function ContentDetailPage() {
             </div>
           </div>
 
+          {isAuthenticated && (catalogType === 'movie' || catalogType === 'series') && (
+            <MediaStreamImport
+              ref={mediaImportRef}
+              onBusyChange={setIsImportBusy}
+              key={item.id}
+              item={item}
+              selectedSeason={selectedSeason}
+              selectedEpisode={selectedEpisode}
+              onImported={() => {
+                void refetchCatalogItem()
+                void queryClient.invalidateQueries({
+                  queryKey: ['catalog', 'streams', catalogType, mediaId.toString()],
+                })
+              }}
+            />
+          )}
+
           {/* Series Season/Episode Selector */}
           {catalogType === 'series' && seasons.length > 0 && (
             <SeriesEpisodePicker
@@ -2351,6 +2378,16 @@ export function ContentDetailPage() {
                 setSelectedEpisode(undefined)
               }}
               onEpisodeChange={setSelectedEpisode}
+              isImportBusy={isImportBusy}
+              onEpisodeImport={
+                isAuthenticated
+                  ? (files, season, episode) => {
+                      setSelectedSeason(season)
+                      setSelectedEpisode(episode)
+                      mediaImportRef.current?.importFiles(files, season, episode)
+                    }
+                  : undefined
+              }
               isAdmin={isAdmin}
               onDeleteEpisode={handleDeleteEpisode}
               isDeletingEpisode={deleteEpisodeAdmin.isPending}

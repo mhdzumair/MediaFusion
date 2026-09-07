@@ -126,6 +126,10 @@ pub struct ImportHttpRequest {
     pub url: String,
     pub name: Option<String>,
     pub meta_id: Option<String>,
+    pub target_media_id: Option<i32>,
+    pub season_number: Option<i32>,
+    pub episode_number: Option<i32>,
+    pub episode_end: Option<i32>,
     pub meta_type: Option<String>,
     pub title: Option<String>,
     #[serde(default = "default_true")]
@@ -140,6 +144,9 @@ pub struct ImportHttpRequest {
     pub is_anonymous: Option<bool>,
     pub anonymous_display_name: Option<String>,
     pub languages: Option<Vec<String>>,
+    pub audio: Option<Vec<String>>,
+    pub hdr: Option<Vec<String>>,
+    pub catalogs: Option<Vec<String>>,
 }
 
 fn default_true() -> bool {
@@ -179,10 +186,12 @@ pub async fn analyze_http_url(
     }
 
     let url = body.url.trim();
-    if url.is_empty() {
+    if !reqwest::Url::parse(url)
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+    {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"detail": "url is required"})),
+            Json(json!({"detail": "A valid HTTP or HTTPS URL is required"})),
         )
             .into_response();
     }
@@ -199,6 +208,9 @@ pub async fn analyze_http_url(
         .unwrap_or("");
 
     Json(json!({
+        "status": "success",
+        "detected_format": format,
+        "detected_extractor": extractor,
         "url": url,
         "domain": domain,
         "format": format,
@@ -218,6 +230,9 @@ pub fn analyze_http_for_bot(url: &str) -> serde_json::Value {
         .unwrap_or("");
     json!({
         "success": true,
+        "status": "success",
+        "detected_format": format,
+        "detected_extractor": extractor,
         "url": url,
         "domain": domain,
         "format": format,
@@ -268,10 +283,12 @@ pub async fn import_http_stream(
     }
 
     let url = body.url.trim().to_string();
-    if url.is_empty() {
+    if !reqwest::Url::parse(&url)
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+    {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"detail": "url is required"})),
+            Json(json!({"detail": "A valid HTTP or HTTPS URL is required"})),
         )
             .into_response();
     }
@@ -312,36 +329,72 @@ pub async fn import_http_stream(
         .unwrap_or_else(|| detect_stream_format(&url));
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
-    let effective_meta_id = body
-        .meta_id
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("http", &url));
-
-    let media_id = super::import_helpers::resolve_media_for_import(
+    let target_media_id = match super::import_helpers::validate_import_target(
         &state.pool,
-        &state.http,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
-        &effective_meta_id,
+        body.target_media_id,
         meta_type,
-        crate::scrapers::media_resolve::ImportMediaOverrides {
-            title: body.title.as_deref().or(Some(stream_name.as_str())),
-            poster: None,
-            background: None,
-            release_date: None,
-            year: None,
-        },
-        None,
-        state.config.poster_nsfw_enabled,
     )
     .await
-    .map(i64::from);
+    {
+        Ok(id) => id,
+        Err((status, message)) => {
+            return (status, Json(json!({"detail": message}))).into_response();
+        }
+    };
+    if meta_type == "series"
+        && (target_media_id.is_some()
+            || body.season_number.is_some()
+            || body.episode_number.is_some()
+            || body.episode_end.is_some())
+        && (body.season_number.is_none_or(|n| n < 0)
+            || body.episode_number.is_none_or(|n| n <= 0)
+            || body.episode_end.is_some_and(|n| {
+                n < body.episode_number.unwrap_or(1) || n - body.episode_number.unwrap_or(1) > 1000
+            }))
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Choose a valid season and episode range"})),
+        )
+            .into_response();
+    }
+    let effective_meta_id = target_media_id
+        .map(|id| format!("mf:{id}"))
+        .or_else(|| {
+            body.meta_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("http", &url));
+
+    let media_id = if let Some(id) = target_media_id {
+        Some(i64::from(id))
+    } else {
+        super::import_helpers::resolve_media_for_import(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            &effective_meta_id,
+            meta_type,
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: body.title.as_deref().or(Some(stream_name.as_str())),
+                poster: None,
+                background: None,
+                release_date: None,
+                year: None,
+            },
+            None,
+            state.config.poster_nsfw_enabled,
+        )
+        .await
+        .map(i64::from)
+    };
 
     // Check for duplicate (link media if missing, Python process_http_import parity)
     if let Some(mid) = media_id {
-        let existing: Option<i64> = sqlx::query_scalar(
+        let existing: Option<i32> = sqlx::query_scalar(
             "SELECT hs.stream_id FROM http_stream hs JOIN stream_media_link sml ON sml.stream_id = hs.stream_id WHERE hs.url = $1 AND sml.media_id = $2 LIMIT 1",
         )
         .bind(&url)
@@ -351,20 +404,6 @@ pub async fn import_http_stream(
         .unwrap_or(None);
 
         if let Some(existing_id) = existing {
-            let _ = super::import_helpers::link_stream_to_media(
-                &state.pool,
-                existing_id as i32,
-                crate::db::MediaId(mid as i32),
-            )
-            .await;
-            if is_public {
-                let _ = sqlx::query(
-                    "UPDATE stream SET is_public = true WHERE id = $1 AND NOT is_public",
-                )
-                .bind(existing_id)
-                .execute(&state.pool)
-                .await;
-            }
             return (
                 StatusCode::CONFLICT,
                 Json(json!({"detail": "Stream already exists", "stream_id": existing_id})),
@@ -397,7 +436,7 @@ pub async fn import_http_stream(
 
     let media_type =
         crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
-    let opts = media_id.map_or_else(
+    let mut opts = media_id.map_or_else(
         || crate::db::StoreStreamOpts {
             media_id: crate::db::MediaId(0),
             media_type,
@@ -411,6 +450,12 @@ pub async fn import_http_stream(
         |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), media_type),
     );
 
+    if meta_type == "series" {
+        opts.season = body.season_number;
+        opts.episode = body.episode_number;
+        opts.episode_end = body.episode_end;
+    }
+
     let stream_id: i64 = match crate::db::store_http_stream(&state.pool, &normalized, &opts).await {
         Ok(r) => r.stream_id().0 as i64,
         Err(e) => {
@@ -419,22 +464,61 @@ pub async fn import_http_stream(
         }
     };
 
+    if target_media_id.is_some() && meta_type == "series" {
+        let first = body.episode_number.unwrap_or(1);
+        let rows: Vec<_> = (first..=body.episode_end.unwrap_or(first))
+            .map(|episode| {
+                json!({
+                    "season_number": body.season_number,
+                    "episode_number": episode,
+                })
+            })
+            .collect();
+        super::import_helpers::ensure_series_episode_metadata(
+            &state.pool,
+            media_id.unwrap(),
+            &rows,
+            &stream_name,
+        )
+        .await;
+    }
+
     if let Some(ref langs) = body.languages {
         let _ = super::import_helpers::link_stream_languages(&state.pool, stream_id as i32, langs)
             .await;
     }
 
+    if let Some(values) = &body.audio {
+        let _ =
+            super::import_helpers::link_stream_audio_formats(&state.pool, stream_id as i32, values)
+                .await;
+    }
+    if let Some(values) = &body.hdr {
+        let _ =
+            super::import_helpers::link_stream_hdr_formats(&state.pool, stream_id as i32, values)
+                .await;
+    }
+    if let (Some(id), Some(values)) = (media_id, &body.catalogs) {
+        let _ = super::import_helpers::link_media_catalogs(&state.pool, id as i32, values).await;
+    }
     let data = serde_json::json!({
         "name": stream_name,
         "title": body.title.as_deref().unwrap_or(&stream_name),
         "url": url,
         "meta_type": meta_type,
         "meta_id": effective_meta_id,
+        "target_media_id": target_media_id,
+        "season_number": body.season_number,
+        "episode_number": body.episode_number,
+        "episode_end": body.episode_end,
         "extractor_name": body.extractor_name,
         "format": format,
         "resolution": body.resolution,
         "quality": body.quality,
         "codec": body.codec,
+        "audio": body.audio,
+        "hdr": body.hdr,
+        "catalogs": body.catalogs,
         "drm_key_id": body.drm_key_id,
         "drm_key": body.drm_key,
         "behavior_hints": body.behavior_hints,
@@ -479,6 +563,9 @@ pub async fn import_http_stream(
         contrib_id = Some(cid);
     }
 
+    if let Some(id) = target_media_id {
+        crate::cache::invalidate_media_stream_caches(&state.redis, id).await;
+    }
     let message = if auto_approve {
         "HTTP stream imported successfully!".to_string()
     } else {

@@ -448,6 +448,19 @@ pub async fn store_http_stream(
         .await?;
     }
 
+    if opts.media_type == MediaType::Series
+        && let (Some(season), Some(first)) = (opts.season, opts.episode)
+    {
+        // HTTP stream queries match exact episodes, so each episode in a range needs a link.
+        let last = opts
+            .episode_end
+            .unwrap_or(first)
+            .clamp(first, first.saturating_add(1000));
+        for episode in first..=last {
+            link_synthetic_episode_file(pool, stream_id, opts.media_id, season, episode, opts)
+                .await?;
+        }
+    }
     link_stream_parsed_metadata(pool, stream_id, &stream.base).await;
 
     Ok(StoreStreamResult::Inserted(stream_id))

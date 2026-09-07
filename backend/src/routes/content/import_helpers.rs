@@ -462,6 +462,43 @@ pub async fn search_analyze_matches(
     .await
 }
 
+/// Resolve an explicitly selected library item without fetching or modifying metadata.
+pub async fn validate_import_target(
+    pool: &PgPool,
+    target_media_id: Option<i32>,
+    meta_type: &str,
+) -> Result<Option<i32>, (StatusCode, String)> {
+    let Some(id) = target_media_id else {
+        return Ok(None);
+    };
+    if id <= 0 {
+        return Err((StatusCode::BAD_REQUEST, "Invalid target media ID".into()));
+    }
+    let row: Option<(MediaType,)> = sqlx::query_as("SELECT type FROM media WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Could not load import target".into(),
+            )
+        })?;
+    let Some((actual_type,)) = row else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "Import target no longer exists".into(),
+        ));
+    };
+    if MediaType::from_wire(meta_type) != Some(actual_type) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Import content type does not match the selected media".into(),
+        ));
+    }
+    Ok(Some(id))
+}
+
 /// Fetch/create media for import submission (Python `fetch_and_create_media_from_external`).
 pub async fn resolve_media_for_import(
     pool: &PgPool,
@@ -1633,7 +1670,7 @@ pub async fn persist_torrent_import(
 
     // Per-file metadata (creates stream_file + file_media_link with season/episode).
     if !file_rows.is_empty() {
-        let _ = insert_torrent_import_files(
+        insert_torrent_import_files(
             pool,
             http,
             input.tmdb_api_key,
@@ -1645,7 +1682,8 @@ pub async fn persist_torrent_import(
             input.sports_category,
             input.prefetch,
         )
-        .await;
+        .await
+        .map_err(sqlx::Error::Protocol)?;
     }
 
     // Catalogs + series episode metadata for the primary media.

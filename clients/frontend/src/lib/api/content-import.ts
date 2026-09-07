@@ -81,6 +81,7 @@ export interface TorrentAnalyzeResponse {
 export type TorrentMetaType = 'movie' | 'series' | 'sports'
 
 export interface MagnetAnalyzeRequest {
+  target_media_id?: number
   magnet_link: string
   meta_type: TorrentMetaType
   meta_id?: string
@@ -90,6 +91,7 @@ export interface MagnetAnalyzeRequest {
 }
 
 export interface TorrentAnalyzeOptions {
+  target_media_id?: number
   meta_id?: string
   title?: string
   resolve_files?: boolean
@@ -97,7 +99,7 @@ export interface TorrentAnalyzeOptions {
 }
 
 export interface ImportResponse {
-  status: 'success' | 'error' | 'warning' | 'needs_annotation' | 'validation_failed' | 'processing'
+  status: 'success' | 'error' | 'warning' | 'needs_annotation' | 'validation_failed' | 'processing' | 'pending'
   message: string
   import_id?: string
   details?: {
@@ -136,6 +138,7 @@ export interface ImportJobStatus {
 
 // Extended import request for torrent/magnet
 export interface TorrentImportRequest {
+  target_media_id?: number
   // Source - one of these required
   magnet_link?: string
   torrent_file?: File
@@ -375,6 +378,13 @@ export interface HTTPAnalyzeResponse {
 }
 
 export interface HTTPImportRequest {
+  audio?: string
+  hdr?: string
+  catalogs?: string
+  season_number?: number
+  episode_number?: number
+  episode_end?: number
+  target_media_id?: number
   url: string
   meta_type: 'movie' | 'series' | 'sports' | 'tv'
   meta_id?: string
@@ -489,6 +499,10 @@ export interface NZBAnalyzeResponse {
 export type NZBMetaType = 'movie' | 'series'
 
 export interface NZBImportRequest {
+  audio?: string
+  hdr?: string
+  catalogs?: string
+  target_media_id?: number
   meta_type: NZBMetaType
   meta_id?: string
   title?: string
@@ -521,7 +535,8 @@ function filenameFromTorrentPath(path?: string): string | undefined {
 }
 
 function normalizeTorrentAnalyzeResponse(response: TorrentAnalyzeResponse): TorrentAnalyzeResponse {
-  const resolvedFiles = response.resolved?.files ?? []
+  const resolved = response.resolved?.files ? response.resolved : undefined
+  const resolvedFiles = resolved?.files ?? []
   const sourceFiles =
     response.files && response.files.length > 0
       ? response.files
@@ -543,15 +558,15 @@ function normalizeTorrentAnalyzeResponse(response: TorrentAnalyzeResponse): Torr
     }
   })
 
-  const normalizedResolved = response.resolved
+  const normalizedResolved = resolved
     ? {
-        ...response.resolved,
-        files: response.resolved.files.map((file) => {
+        ...resolved,
+        files: resolved.files.map((file) => {
           const filename = filenameFromTorrentPath(file.path) || file.path
           return { ...file, filename }
         }),
       }
-    : response.resolved
+    : undefined
 
   return {
     ...response,
@@ -587,6 +602,7 @@ export const contentImportApi = {
     const formData = new FormData()
     formData.append('torrent_file', file)
     formData.append('meta_type', metaType)
+    if (options?.target_media_id != null) formData.append('target_media_id', String(options.target_media_id))
     if (options?.meta_id) formData.append('meta_id', options.meta_id)
     if (options?.title) formData.append('title', options.title)
     if (options?.resolve_files) formData.append('resolve_files', 'true')
@@ -611,6 +627,7 @@ export const contentImportApi = {
     const formData = new FormData()
     formData.append('magnet_link', data.magnet_link)
     formData.append('meta_type', data.meta_type)
+    if (data.target_media_id != null) formData.append('target_media_id', String(data.target_media_id))
     if (data.meta_id) formData.append('meta_id', data.meta_id)
     if (data.title) formData.append('title', data.title)
     if (data.poster) formData.append('poster', data.poster)
@@ -627,7 +644,7 @@ export const contentImportApi = {
     if (data.created_at) formData.append('created_at', data.created_at)
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_add_title_to_poster) formData.append('is_add_title_to_poster', 'true')
-    if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.is_anonymous != null) formData.append('is_anonymous', String(data.is_anonymous))
     if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     if (data.sports_category) formData.append('sports_category', data.sports_category)
@@ -644,6 +661,7 @@ export const contentImportApi = {
     const formData = new FormData()
     formData.append('torrent_file', data.torrent_file)
     formData.append('meta_type', data.meta_type)
+    if (data.target_media_id != null) formData.append('target_media_id', String(data.target_media_id))
     if (data.meta_id) formData.append('meta_id', data.meta_id)
     if (data.title) formData.append('title', data.title)
     if (data.poster) formData.append('poster', data.poster)
@@ -660,7 +678,7 @@ export const contentImportApi = {
     if (data.created_at) formData.append('created_at', data.created_at)
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_add_title_to_poster) formData.append('is_add_title_to_poster', 'true')
-    if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.is_anonymous != null) formData.append('is_anonymous', String(data.is_anonymous))
     if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     if (data.sports_category) formData.append('sports_category', data.sports_category)
@@ -811,7 +829,7 @@ export const contentImportApi = {
     if (data.geo_restriction_countries) formData.append('geo_restriction_countries', data.geo_restriction_countries)
     if (data.catalogs) formData.append('catalogs', data.catalogs)
     if (data.force_import) formData.append('force_import', 'true')
-    if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.is_anonymous != null) formData.append('is_anonymous', String(data.is_anonymous))
     if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     return apiClient.upload<ImportResponse>('/import/youtube', formData)
   },
@@ -838,24 +856,19 @@ export const contentImportApi = {
    * Import an HTTP URL as a stream
    */
   importHTTP: async (data: HTTPImportRequest): Promise<ImportResponse> => {
-    const formData = new FormData()
-    formData.append('url', data.url)
-    formData.append('meta_type', data.meta_type)
-    if (data.meta_id) formData.append('meta_id', data.meta_id)
-    if (data.title) formData.append('title', data.title)
-    if (data.extractor_name) formData.append('extractor_name', data.extractor_name)
-    if (data.request_headers) formData.append('request_headers', JSON.stringify(data.request_headers))
-    if (data.response_headers) formData.append('response_headers', JSON.stringify(data.response_headers))
-    if (data.drm_key_id) formData.append('drm_key_id', data.drm_key_id)
-    if (data.drm_key) formData.append('drm_key', data.drm_key)
-    if (data.resolution) formData.append('resolution', data.resolution)
-    if (data.quality) formData.append('quality', data.quality)
-    if (data.codec) formData.append('codec', data.codec)
-    if (data.languages) formData.append('languages', data.languages)
-    if (data.force_import) formData.append('force_import', 'true')
-    if (data.is_anonymous) formData.append('is_anonymous', 'true')
-    if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
-    return apiClient.upload<ImportResponse>('/import/http', formData)
+    return apiClient.post<ImportResponse>('/import/http', {
+      ...data,
+      audio: data.audio?.split(','),
+      hdr: data.hdr?.split(','),
+      catalogs: data.catalogs?.split(','),
+      languages: data.languages
+        ?.split(',')
+        .map((language) => language.trim())
+        .filter(Boolean),
+      behavior_hints: {
+        proxyHeaders: { request: data.request_headers, response: data.response_headers },
+      },
+    })
   },
 
   // ============================================
@@ -883,11 +896,24 @@ export const contentImportApi = {
   /**
    * Analyze an NZB file
    */
-  analyzeNZBFile: async (file: File, metaType: NZBMetaType): Promise<NZBAnalyzeResponse> => {
+  analyzeNZBFile: async (file: File, metaType: NZBMetaType, targetMediaId?: number): Promise<NZBAnalyzeResponse> => {
     const formData = new FormData()
     formData.append('nzb_file', file)
+    if (targetMediaId != null) formData.append('target_media_id', String(targetMediaId))
     formData.append('meta_type', metaType)
-    return apiClient.upload<NZBAnalyzeResponse>('/import/nzb/analyze/file', formData)
+    const response = await apiClient.upload<
+      Omit<NZBAnalyzeResponse, 'parsed_title'> & {
+        parsed_title?: string | { title?: string; year?: number; resolution?: string; quality?: string; codec?: string }
+      }
+    >('/import/nzb/analyze/file', formData)
+    const parsed = typeof response.parsed_title === 'object' ? response.parsed_title : undefined
+    return {
+      ...response,
+      ...parsed,
+      status: response.status || 'success',
+      parsed_title: parsed ? parsed.title : (response.parsed_title as string | undefined),
+      files: response.files?.map((file, index) => ({ ...file, index: file.index ?? index })),
+    }
   },
 
   /**
@@ -906,16 +932,20 @@ export const contentImportApi = {
   importNZBFile: async (data: NZBImportRequest & { nzb_file: File }): Promise<ImportResponse> => {
     const formData = new FormData()
     formData.append('nzb_file', data.nzb_file)
+    if (data.target_media_id != null) formData.append('target_media_id', String(data.target_media_id))
     formData.append('meta_type', data.meta_type)
     if (data.meta_id) formData.append('meta_id', data.meta_id)
     if (data.title) formData.append('title', data.title)
     if (data.indexer) formData.append('indexer', data.indexer)
     if (data.resolution) formData.append('resolution', data.resolution)
     if (data.quality) formData.append('quality', data.quality)
+    if (data.audio) formData.append('audio', data.audio)
+    if (data.hdr) formData.append('hdr', data.hdr)
+    if (data.catalogs) formData.append('catalogs', data.catalogs)
     if (data.codec) formData.append('codec', data.codec)
     if (data.languages) formData.append('languages', data.languages)
     if (data.force_import) formData.append('force_import', 'true')
-    if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.is_anonymous != null) formData.append('is_anonymous', String(data.is_anonymous))
     if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     return apiClient.upload<ImportResponse>('/import/nzb', formData)

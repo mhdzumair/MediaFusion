@@ -70,6 +70,10 @@ interface TorrentImportDialogProps {
   queueItems?: TorrentDialogQueueItem[]
   prefillData?: Partial<TorrentImportFormData>
   imageUploadEnabled?: boolean
+  /** Skip discovery and keep all files attached to this library item. */
+  targetMedia?: { id: number; title: string; type: 'movie' | 'series'; poster?: string }
+  sourceLabel?: string
+  importError?: string
 }
 
 export function TorrentImportDialog({
@@ -89,6 +93,9 @@ export function TorrentImportDialog({
   queueItems = [],
   prefillData,
   imageUploadEnabled = false,
+  targetMedia,
+  sourceLabel = 'Torrent',
+  importError,
 }: TorrentImportDialogProps) {
   const normalizeResolutionValue = useCallback((value?: string | null): string | undefined => {
     if (!value) return undefined
@@ -146,6 +153,7 @@ export function TorrentImportDialog({
 
   // Series-specific
   const [episodeParser, setEpisodeParser] = useState('')
+  const [annotationsReviewed, setAnnotationsReviewed] = useState(false)
   const [fileAnnotations, setFileAnnotations] = useState<FileAnnotation[]>([])
 
   // Import options
@@ -204,6 +212,7 @@ export function TorrentImportDialog({
     const resolvedContentType = prefills.contentType || initialContentType
     const analysisCreatedDate = analysis.created_at?.slice(0, 10)
     const hasExistingSportsMatches = resolvedContentType === 'sports' && (analysis.matches?.length || 0) > 0
+    setAnnotationsReviewed(false)
     setPrevOpen(open)
     setPrevAnalysis(analysis)
     setContentType(resolvedContentType)
@@ -222,26 +231,9 @@ export function TorrentImportDialog({
     setForceImport(prefills.forceImport ?? false)
     setIsAnonymous(prefills.isAnonymous ?? user?.contribute_anonymously ?? false)
     setAnonymousDisplayName(prefills.anonymousDisplayName || getStoredAnonymousDisplayName())
-    // Auto-populate file annotations from DHT-resolved data when no prefills provided
-    if (prefills.fileData) {
-      setFileAnnotations(prefills.fileData)
-    } else if (analysis.resolved?.files) {
-      const VIDEO_EXTS = /\.(mkv|mp4|avi|mov|wmv|m4v|ts|m2ts|webm|flv|divx|xvid)$/i
-      setFileAnnotations(
-        analysis.resolved.files
-          .filter((f) => VIDEO_EXTS.test(f.path))
-          .map((f, idx) => ({
-            index: idx,
-            filename: f.path.split('/').pop() ?? f.path,
-            size: f.size,
-            season_number: null,
-            episode_number: null,
-            included: true,
-          })),
-      )
-    } else {
-      setFileAnnotations([])
-    }
+    // Let the annotation editor detect episodes from normalized source files.
+    // Only explicit saved annotations should override detection.
+    setFileAnnotations(prefills.fileData || [])
     setPoster(prefills.poster || '')
     setBackground(prefills.background || '')
     setReleaseDate(
@@ -254,7 +246,7 @@ export function TorrentImportDialog({
     setSelectedQueueIndices([])
     setActiveMatch(null)
 
-    if (analysis.matches && analysis.matches.length > 0) {
+    if (!targetMedia && analysis.matches && analysis.matches.length > 0) {
       const firstMatch = analysis.matches[0] as ExtendedMatch
       const shouldAutoSelectMatch = resolvedContentType !== 'sports'
       if (shouldAutoSelectMatch) {
@@ -276,7 +268,7 @@ export function TorrentImportDialog({
       setActiveMatch(null)
     }
 
-    setCurrentStep('review')
+    setCurrentStep(targetMedia ? 'metadata' : 'review')
   }
 
   const applyMatchMetadata = useCallback((match: ExtendedMatch) => {
@@ -401,13 +393,28 @@ export function TorrentImportDialog({
       }
       goToStep('metadata')
     } else if (currentStep === 'metadata') {
+      if (targetMedia?.type === 'series' && !annotationsReviewed) {
+        setAnnotationDialogOpen(true)
+        return
+      }
       goToStep('confirm')
     }
-  }, [currentStep, goToStep, metaId, title, activeMatch, matchLookupType, applyMatchMetadata])
+  }, [
+    currentStep,
+    goToStep,
+    metaId,
+    title,
+    activeMatch,
+    matchLookupType,
+    applyMatchMetadata,
+    targetMedia,
+    annotationsReviewed,
+  ])
 
   // Handle file annotation confirm
   const handleAnnotationConfirm = useCallback((files: FileAnnotation[]) => {
     setFileAnnotations(files)
+    setAnnotationsReviewed(true)
     setAnnotationDialogOpen(false)
   }, [])
 
@@ -560,7 +567,7 @@ export function TorrentImportDialog({
 
   // Step indicator
   const steps = [
-    { id: 'review', label: 'Review', icon: Search },
+    ...(!targetMedia ? [{ id: 'review', label: 'Review', icon: Search }] : []),
     { id: 'metadata', label: 'Metadata', icon: Settings2 },
     { id: 'confirm', label: 'Confirm', icon: CheckCircle },
   ]
@@ -570,7 +577,12 @@ export function TorrentImportDialog({
   // If in multi-content mode, show the wizard instead
   if (isMultiContentMode) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!isImporting) onOpenChange(next)
+        }}
+      >
         <DialogContent
           scrollMode="contained"
           className="sm:max-w-[900px] max-h-[85vh] min-h-0 flex flex-col p-0 gap-0 overflow-hidden"
@@ -589,7 +601,12 @@ export function TorrentImportDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!isImporting) onOpenChange(next)
+        }}
+      >
         <DialogContent
           scrollMode="contained"
           className="sm:max-w-[900px] max-h-[85vh] min-h-0 flex flex-col p-0 gap-0 overflow-hidden"
@@ -598,7 +615,7 @@ export function TorrentImportDialog({
           <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5 text-primary" />
-              Import Torrent
+              Import {sourceLabel}
               {totalItems > 1 && typeof currentIndex === 'number' && (
                 <span className="ml-auto rounded-md bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
                   Torrent {currentIndex + 1} of {totalItems}
@@ -607,6 +624,7 @@ export function TorrentImportDialog({
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-1">
+                {targetMedia && <p className="text-sm font-medium text-foreground">Adding to {targetMedia.title}</p>}
                 <p className="font-mono text-xs bg-muted/50 p-2 rounded-md break-all text-foreground/80">
                   {analysis.torrent_name || 'Unknown torrent'}
                 </p>
@@ -637,6 +655,7 @@ export function TorrentImportDialog({
                       variant="ghost"
                       size="sm"
                       className={cn('gap-1.5 h-8', isActive && 'bg-primary/10 text-primary', isPast && 'text-primary')}
+                      disabled={isImporting || (!!targetMedia && !isPast && !isActive)}
                       onClick={() => goToStep(step.id as ImportStep)}
                     >
                       <Icon className={cn('h-3.5 w-3.5', isPast && 'text-primary')} />
@@ -746,57 +765,58 @@ export function TorrentImportDialog({
               {currentStep === 'metadata' && (
                 <div className="space-y-6">
                   {/* Basic Metadata */}
-                  <div className="space-y-4">
-                    <Label className="text-sm font-medium">Basic Information</Label>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          <Link2 className="h-3 w-3" />
-                          IMDb/Meta ID
-                        </Label>
-                        <Input
-                          value={metaId}
-                          onChange={(e) => setMetaId(e.target.value)}
-                          placeholder="tt1234567"
-                          className="rounded-lg"
+                  {!targetMedia && (
+                    <div className="space-y-4">
+                      <Label className="text-sm font-medium">Basic Information</Label>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <Link2 className="h-3 w-3" />
+                            IMDb/Meta ID
+                          </Label>
+                          <Input
+                            value={metaId}
+                            onChange={(e) => setMetaId(e.target.value)}
+                            placeholder="tt1234567"
+                            className="rounded-lg"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <FileText className="h-3 w-3" />
+                            Title
+                          </Label>
+                          <Input
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder="Movie/Series title"
+                            className="rounded-lg"
+                          />
+                        </div>
+                        <ImageUrlInput
+                          label="Poster URL"
+                          value={poster}
+                          onChange={setPoster}
+                          aspectRatio="poster"
+                          allowUpload={imageUploadEnabled}
                         />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          <FileText className="h-3 w-3" />
-                          Title
-                        </Label>
-                        <Input
-                          value={title}
-                          onChange={(e) => setTitle(e.target.value)}
-                          placeholder="Movie/Series title"
-                          className="rounded-lg"
+                        <ImageUrlInput
+                          label="Background URL"
+                          value={background}
+                          onChange={setBackground}
+                          aspectRatio="backdrop"
+                          allowUpload={imageUploadEnabled}
                         />
-                      </div>
-                      <ImageUrlInput
-                        label="Poster URL"
-                        value={poster}
-                        onChange={setPoster}
-                        aspectRatio="poster"
-                        allowUpload={imageUploadEnabled}
-                      />
-                      <ImageUrlInput
-                        label="Background URL"
-                        value={background}
-                        onChange={setBackground}
-                        aspectRatio="backdrop"
-                        allowUpload={imageUploadEnabled}
-                      />
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          <Calendar className="h-3 w-3" />
-                          Release Date
-                        </Label>
-                        <DatePickerInput value={releaseDate} onChange={setReleaseDate} className="h-10" />
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <Calendar className="h-3 w-3" />
+                            Release Date
+                          </Label>
+                          <DatePickerInput value={releaseDate} onChange={setReleaseDate} className="h-10" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-
+                  )}
                   {/* Technical Specs */}
                   <div className="space-y-3">
                     <Label className="text-sm font-medium">Technical Specifications</Label>
@@ -826,24 +846,25 @@ export function TorrentImportDialog({
                       <Label className="text-sm font-medium">Episode Options</Label>
 
                       {/* Episode Parser */}
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">Episode Name Parser (regex pattern)</Label>
-                        <Input
-                          value={episodeParser}
-                          onChange={(e) => setEpisodeParser(e.target.value)}
-                          placeholder="Optional: S(\d+)E(\d+)"
-                          className="rounded-lg font-mono text-sm"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Leave empty to use default parser or annotate files manually
-                        </p>
-                      </div>
-
+                      {sourceLabel === 'Torrent' && (
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground">Episode Name Parser (regex pattern)</Label>
+                          <Input
+                            value={episodeParser}
+                            onChange={(e) => setEpisodeParser(e.target.value)}
+                            placeholder="Optional: S(\d+)E(\d+)"
+                            className="rounded-lg font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Leave empty to use default parser or annotate files manually
+                          </p>
+                        </div>
+                      )}
                       {/* File Annotation Button */}
                       {needsAnnotation && (
                         <Button variant="outline" onClick={() => setAnnotationDialogOpen(true)} className="w-full">
                           <FileVideo className="h-4 w-4 mr-2" />
-                          Annotate Episode Files ({fileAnnotations.length || analysis.files?.length || 0})
+                          Review Episode Files ({fileAnnotations.length || analysis.files?.length || 0})
                         </Button>
                       )}
                     </div>
@@ -865,10 +886,12 @@ export function TorrentImportDialog({
                         <span className="text-muted-foreground">Title</span>
                         <span className="font-medium">{title || 'Not set'}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">IMDb ID</span>
-                        <span className="font-mono text-xs">{metaId || 'Not set'}</span>
-                      </div>
+                      {!targetMedia && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">IMDb ID</span>
+                          <span className="font-mono text-xs">{metaId || 'Not set'}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Quality</span>
                         <span className="font-medium">
@@ -885,7 +908,9 @@ export function TorrentImportDialog({
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Files Annotated</span>
                           <span className="font-medium">
-                            {fileAnnotations.length > 0 ? `${fileAnnotations.length} files` : 'Using auto-parser'}
+                            {fileAnnotations.length > 0
+                              ? `${fileAnnotations.filter((file) => file.included).length} files`
+                              : 'Using auto-parser'}
                           </span>
                         </div>
                       )}
@@ -896,13 +921,15 @@ export function TorrentImportDialog({
                   <div className="space-y-3">
                     <Label className="text-sm font-medium">Options</Label>
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-                        <div className="flex items-center gap-2">
-                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">Add title to poster</span>
+                      {!targetMedia && (
+                        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                          <div className="flex items-center gap-2">
+                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm">Add title to poster</span>
+                          </div>
+                          <Switch checked={addTitleToPoster} onCheckedChange={setAddTitleToPoster} />
                         </div>
-                        <Switch checked={addTitleToPoster} onCheckedChange={setAddTitleToPoster} />
-                      </div>
+                      )}
                       <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
                         <div>
                           <div className="flex items-center gap-2">
@@ -994,13 +1021,18 @@ export function TorrentImportDialog({
             </div>
           </ScrollArea>
 
+          {importError && (
+            <p role="alert" className="px-6 py-3 text-sm text-destructive">
+              {importError}
+            </p>
+          )}
           {/* Footer */}
           <div className="px-6 py-4 border-t bg-muted/30 flex-shrink-0">
             <div className="flex items-center justify-between">
               <Button
                 variant="outline"
                 onClick={goBack}
-                disabled={currentStep === 'review' || isImporting}
+                disabled={currentStep === 'review' || (!!targetMedia && currentStep === 'metadata') || isImporting}
                 className="rounded-lg"
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
@@ -1066,7 +1098,9 @@ export function TorrentImportDialog({
           releaseDate || ((analysis.matches?.length || 0) === 0 ? analysis.created_at?.slice(0, 10) : undefined)
         }
         onConfirm={handleAnnotationConfirm}
-        allowMultiContent={contentType === 'movie' || contentType === 'series'}
+        allowMultiContent={!targetMedia && (contentType === 'movie' || contentType === 'series')}
+        initialAnnotations={fileAnnotations}
+        requireEpisodeMapping={!!targetMedia && contentType === 'series'}
         defaultMetaType={contentType === 'series' ? 'series' : 'movie'}
       />
 

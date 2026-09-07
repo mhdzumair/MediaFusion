@@ -1,3 +1,4 @@
+import { EpisodeImportDropTarget } from './EpisodeImportDropTarget'
 import { useState, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Play, Calendar, Tv, Check, Trash2, Loader2, Edit, CheckSquare, Square } from 'lucide-react'
+import { Play, Calendar, Tv, Check, Trash2, Loader2, Edit, CheckSquare, Square, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EpisodeEditSheet, type EpisodeData } from './EpisodeEditSheet'
 import { useAuth } from '@/contexts/AuthContext'
@@ -47,6 +48,8 @@ interface SeriesEpisodePickerProps {
   selectedEpisode?: number
   onSeasonChange: (season: number) => void
   onEpisodeChange: (episode: number) => void
+  onEpisodeImport?: (files: File[], season: number, episode: number) => void
+  isImportBusy?: boolean
   onEpisodePlay?: (season: number, episode: number) => void
   // Admin props (episode deletion is admin-only)
   isAdmin?: boolean
@@ -70,6 +73,8 @@ export function SeriesEpisodePicker({
   onSeasonChange,
   onEpisodeChange,
   onEpisodePlay,
+  onEpisodeImport,
+  isImportBusy = false,
   isAdmin = false,
   onDeleteEpisode,
   isDeletingEpisode = false,
@@ -407,197 +412,223 @@ export function SeriesEpisodePicker({
                   const aired = isAired(episode.released)
 
                   return (
-                    <div
+                    <EpisodeImportDropTarget
                       key={episode.episode_number}
-                      className={cn(
-                        'group relative flex gap-3 p-3 rounded-xl transition-all cursor-pointer',
-                        'hover:bg-muted/50',
-                        isSelected && 'bg-primary/10 border border-primary/30',
-                        !aired && 'opacity-60',
-                      )}
-                      onClick={() => aired && onEpisodeChange(episode.episode_number)}
+                      season={selectedSeason!}
+                      episode={episode.episode_number}
+                      onImport={isAuthenticated ? onEpisodeImport : undefined}
+                      disabled={isImportBusy}
                     >
-                      {/* Episode Thumbnail or Number */}
-                      {episode.thumbnail ? (
-                        <div className="flex-shrink-0 w-28 h-16 rounded-lg overflow-hidden bg-muted">
-                          <img
-                            src={episode.thumbnail}
-                            alt={episode.title || `Episode ${episode.episode_number}`}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                          <div
-                            className={cn(
-                              'absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold',
-                              'bg-black/70 text-white backdrop-blur-sm',
-                            )}
-                          >
-                            {episode.episode_number}
-                          </div>
-                        </div>
-                      ) : (
+                      {(openFilePicker) => (
                         <div
                           className={cn(
-                            'flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-sm font-medium',
-                            isSelected
-                              ? 'bg-gradient-to-br from-primary to-primary/80 text-white'
-                              : 'bg-muted text-muted-foreground',
+                            'group relative flex gap-3 p-3 rounded-xl transition-all cursor-pointer',
+                            'hover:bg-muted/50',
+                            isSelected && 'bg-primary/10 border border-primary/30',
+                            !aired && 'opacity-60',
                           )}
+                          onClick={() => aired && onEpisodeChange(episode.episode_number)}
                         >
-                          {episode.episode_number}
-                        </div>
-                      )}
-
-                      {/* Episode Info */}
-                      <div className="flex-1 min-w-0 flex flex-col justify-center">
-                        <div className="flex items-center gap-2">
-                          <span className={cn('font-medium line-clamp-1', isSelected && 'text-primary')}>
-                            {episode.title || `Episode ${episode.episode_number}`}
-                          </span>
-                          {!aired && (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] px-1.5 py-0 border-primary/50 text-primary flex-shrink-0"
+                          {/* Episode Thumbnail or Number */}
+                          {episode.thumbnail ? (
+                            <div className="flex-shrink-0 w-28 h-16 rounded-lg overflow-hidden bg-muted">
+                              <img
+                                src={episode.thumbnail}
+                                alt={episode.title || `Episode ${episode.episode_number}`}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                              <div
+                                className={cn(
+                                  'absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold',
+                                  'bg-black/70 text-white backdrop-blur-sm',
+                                )}
+                              >
+                                {episode.episode_number}
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              className={cn(
+                                'flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-sm font-medium',
+                                isSelected
+                                  ? 'bg-gradient-to-br from-primary to-primary/80 text-white'
+                                  : 'bg-muted text-muted-foreground',
+                              )}
                             >
-                              Upcoming
-                            </Badge>
+                              {episode.episode_number}
+                            </div>
                           )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {episode.released && (
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Calendar className="h-3 w-3" />
-                              {formatDate(episode.released)}
-                            </span>
-                          )}
-                        </div>
-                        {/* Episode overview preview */}
-                        {episode.overview && (
-                          <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{episode.overview}</p>
-                        )}
-                      </div>
 
-                      {/* Play/Select Button and Actions */}
-                      <div className="flex-shrink-0 flex items-center gap-1">
-                        {/* User Edit Button */}
-                        {isAuthenticated && episode.id && (
-                          <EpisodeEditSheet
-                            episode={
-                              {
-                                id: episode.id,
-                                episode_number: episode.episode_number,
-                                title: episode.title,
-                                overview: episode.overview,
-                                air_date: episode.released,
-                                runtime_minutes: episode.runtime_minutes,
-                                season_number: selectedSeason,
-                                series_title: seriesTitle,
-                              } as EpisodeData
-                            }
-                            onSuccess={onEpisodeEditSuccess}
-                            trigger={
+                          {/* Episode Info */}
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center gap-2">
+                              <span className={cn('font-medium line-clamp-1', isSelected && 'text-primary')}>
+                                {episode.title || `Episode ${episode.episode_number}`}
+                              </span>
+                              {!aired && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] px-1.5 py-0 border-primary/50 text-primary flex-shrink-0"
+                                >
+                                  Upcoming
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {episode.released && (
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Calendar className="h-3 w-3" />
+                                  {formatDate(episode.released)}
+                                </span>
+                              )}
+                            </div>
+                            {/* Episode overview preview */}
+                            {episode.overview && (
+                              <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{episode.overview}</p>
+                            )}
+                          </div>
+
+                          {/* Play/Select Button and Actions */}
+                          <div className="flex-shrink-0 flex items-center gap-1">
+                            {isAuthenticated && onEpisodeImport && (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className={cn(
-                                  'h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
-                                  'text-muted-foreground hover:text-primary hover:bg-primary/10',
-                                )}
-                                onClick={(e) => e.stopPropagation()}
-                                aria-label="Suggest edit"
-                                title="Suggest edit"
+                                className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-primary"
+                                disabled={isImportBusy}
+                                aria-label={`Import stream for season ${selectedSeason}, episode ${episode.episode_number}`}
+                                title="Import stream or drop a torrent/NZB file onto this episode"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openFilePicker()
+                                }}
                               >
-                                <Edit className="h-4 w-4" />
+                                <Upload className="h-4 w-4" />
                               </Button>
-                            }
-                          />
-                        )}
-
-                        {/* Admin Delete Button */}
-                        {isAdmin && episode.id && onDeleteEpisode && (
-                          <AlertDialog>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <AlertDialogTrigger asChild>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className={cn(
-                                        'h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
-                                        'text-destructive hover:text-destructive hover:bg-destructive/10',
-                                      )}
-                                      onClick={(e) => e.stopPropagation()}
-                                      disabled={isDeletingEpisode}
-                                    >
-                                      {deletingEpisodeId === episode.id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                  </TooltipTrigger>
-                                </AlertDialogTrigger>
-                                <TooltipContent>
-                                  <p>Delete episode (admin)</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Episode?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will permanently delete S{selectedSeason?.toString().padStart(2, '0')}E
-                                  {episode.episode_number.toString().padStart(2, '0')}
-                                  {episode.title && ` - "${episode.title}"`} from the database.
-                                  <br />
-                                  <br />
-                                  This action cannot be undone. Use this to clean up incorrectly auto-detected episodes.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={async (e) => {
-                                    e.stopPropagation()
-                                    if (episode.id) {
-                                      setDeletingEpisodeId(episode.id)
-                                      try {
-                                        await onDeleteEpisode(episode.id, selectedSeason!, episode.episode_number)
-                                      } finally {
-                                        setDeletingEpisodeId(null)
-                                      }
-                                    }
-                                  }}
-                                >
-                                  Delete Episode
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-
-                        {aired && onEpisodePlay ? (
-                          <Button
-                            size="sm"
-                            variant={isSelected ? 'default' : 'ghost'}
-                            className={cn(
-                              'h-9 w-9 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
-                              isSelected && 'opacity-100 bg-gradient-to-r from-primary to-primary/80',
                             )}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onEpisodePlay(selectedSeason!, episode.episode_number)
-                            }}
-                          >
-                            <Play className="h-4 w-4" />
-                          </Button>
-                        ) : isSelected ? (
-                          <Check className="h-4 w-4 text-primary" />
-                        ) : null}
-                      </div>
-                    </div>
+                            {/* User Edit Button */}
+                            {isAuthenticated && episode.id && (
+                              <EpisodeEditSheet
+                                episode={
+                                  {
+                                    id: episode.id,
+                                    episode_number: episode.episode_number,
+                                    title: episode.title,
+                                    overview: episode.overview,
+                                    air_date: episode.released,
+                                    runtime_minutes: episode.runtime_minutes,
+                                    season_number: selectedSeason,
+                                    series_title: seriesTitle,
+                                  } as EpisodeData
+                                }
+                                onSuccess={onEpisodeEditSuccess}
+                                trigger={
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className={cn(
+                                      'h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
+                                      'text-muted-foreground hover:text-primary hover:bg-primary/10',
+                                    )}
+                                    onClick={(e) => e.stopPropagation()}
+                                    aria-label="Suggest edit"
+                                    title="Suggest edit"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                }
+                              />
+                            )}
+
+                            {/* Admin Delete Button */}
+                            {isAdmin && episode.id && onDeleteEpisode && (
+                              <AlertDialog>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <AlertDialogTrigger asChild>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className={cn(
+                                            'h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
+                                            'text-destructive hover:text-destructive hover:bg-destructive/10',
+                                          )}
+                                          onClick={(e) => e.stopPropagation()}
+                                          disabled={isDeletingEpisode}
+                                        >
+                                          {deletingEpisodeId === episode.id ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : (
+                                            <Trash2 className="h-4 w-4" />
+                                          )}
+                                        </Button>
+                                      </TooltipTrigger>
+                                    </AlertDialogTrigger>
+                                    <TooltipContent>
+                                      <p>Delete episode (admin)</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete Episode?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently delete S{selectedSeason?.toString().padStart(2, '0')}E
+                                      {episode.episode_number.toString().padStart(2, '0')}
+                                      {episode.title && ` - "${episode.title}"`} from the database.
+                                      <br />
+                                      <br />
+                                      This action cannot be undone. Use this to clean up incorrectly auto-detected
+                                      episodes.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        if (episode.id) {
+                                          setDeletingEpisodeId(episode.id)
+                                          try {
+                                            await onDeleteEpisode(episode.id, selectedSeason!, episode.episode_number)
+                                          } finally {
+                                            setDeletingEpisodeId(null)
+                                          }
+                                        }
+                                      }}
+                                    >
+                                      Delete Episode
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+
+                            {aired && onEpisodePlay ? (
+                              <Button
+                                size="sm"
+                                variant={isSelected ? 'default' : 'ghost'}
+                                className={cn(
+                                  'h-9 w-9 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
+                                  isSelected && 'opacity-100 bg-gradient-to-r from-primary to-primary/80',
+                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onEpisodePlay(selectedSeason!, episode.episode_number)
+                                }}
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            ) : isSelected ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
+                    </EpisodeImportDropTarget>
                   )
                 })}
               </div>

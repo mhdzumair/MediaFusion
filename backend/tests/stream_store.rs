@@ -576,3 +576,39 @@ async fn upsert_torrent_files_by_hash_enriches_existing_torrent() {
     assert_eq!(declared_file_count, 1);
     cleanup.finish().await;
 }
+
+#[tokio::test]
+async fn store_http_series_links_every_episode_in_range() {
+    let _db = common::lock_db_tests().await;
+    let pool = common::test_pool().await;
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Series, "stream_store::http_series_range").await;
+    cleanup.media_ids.push(media_id);
+    let stream = HttpStoreInput {
+        base: StreamStoreBase {
+            name: "Episodes 3–5".into(),
+            source: "test".into(),
+            ..Default::default()
+        },
+        url: format!("https://example/series/{media_id}.m3u8"),
+        format: Some("hls".into()),
+        behavior_hints: None,
+        drm_key_id: None,
+        drm_key: None,
+        extractor_name: None,
+    };
+    let mut opts = StoreStreamOpts::user_import(MediaId(media_id), MediaType::Series);
+    opts.season = Some(2);
+    opts.episode = Some(3);
+    opts.episode_end = Some(5);
+    let result = store_http_stream(pool, &stream, &opts)
+        .await
+        .expect("store HTTP series stream");
+    cleanup.stream_ids.push(result.stream_id().0);
+    let episodes: Vec<i32> = sqlx::query_scalar(
+        "SELECT fml.episode_number FROM file_media_link fml JOIN stream_file sf ON sf.id = fml.file_id \
+         WHERE sf.stream_id = $1 AND fml.media_id = $2 AND fml.season_number = 2 ORDER BY fml.episode_number"
+    ).bind(result.stream_id().0).bind(media_id).fetch_all(pool).await.expect("episode links");
+    assert_eq!(episodes, vec![3, 4, 5]);
+    cleanup.finish().await;
+}

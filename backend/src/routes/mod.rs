@@ -330,13 +330,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/users/me", get(auth::get_me).patch(auth::update_me))
         // ── Torrent import ────────────────────────────────────────────────────
         .route("/api/v1/import/magnet/analyze", post(content::torrent_import::analyze_magnet))
-        .route("/api/v1/import/torrent/analyze", post(content::torrent_import::analyze_torrent))
+        .route("/api/v1/import/torrent/analyze", post(content::torrent_import::analyze_torrent).layer(axum::extract::DefaultBodyLimit::max(21 * 1024 * 1024)))
         .route("/api/v1/import/magnet", post(content::torrent_import::import_magnet))
-        .route("/api/v1/import/torrent", post(content::torrent_import::import_torrent))
+        .route("/api/v1/import/torrent", post(content::torrent_import::import_torrent).layer(axum::extract::DefaultBodyLimit::max(21 * 1024 * 1024)))
         // ── NZB import ────────────────────────────────────────────────────────
-        .route("/api/v1/import/nzb/analyze/file", post(content::nzb_import::analyze_nzb_file))
+        .route("/api/v1/import/nzb/analyze/file", post(content::nzb_import::analyze_nzb_file).layer(axum::extract::DefaultBodyLimit::max(21 * 1024 * 1024)))
         .route("/api/v1/import/nzb/analyze/url", post(content::nzb_import::analyze_nzb_url))
-        .route("/api/v1/import/nzb", post(content::nzb_import::import_nzb))
+        .route("/api/v1/import/nzb", post(content::nzb_import::import_nzb).layer(axum::extract::DefaultBodyLimit::max(21 * 1024 * 1024)))
         .route("/api/v1/import/nzb/url", post(content::nzb_import::import_nzb_url))
         .route("/api/v1/import/nzb/{guid}/download", get(content::nzb_import::download_nzb))
         // ── M3U import ────────────────────────────────────────────────────────

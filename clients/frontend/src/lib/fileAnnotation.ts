@@ -47,7 +47,7 @@ export function buildFileAnnotationUpdates(
 ): FileAnnotationUpdate[] {
   return editedFiles
     .filter(isModified)
-    .map((editedFile) => {
+    .map((editedFile): FileAnnotationUpdate | null => {
       if (!editedFile.included) {
         const original = originalFiles.find((f) => f.file_id === editedFile.file_id)
         const hadLink =

@@ -16,7 +16,10 @@ pub struct DetectedEpisode {
 
 fn re_sxxexx() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"(?i)[sS](\d{1,2})[eE](\d{1,2})").unwrap())
+    R.get_or_init(|| {
+        Regex::new(r"(?i)(?:^|[^a-z0-9])s(\d{1,3})[\s._-]*ep?[\s._-]*(\d{1,3})(?:[^0-9]|$)")
+            .unwrap()
+    })
 }
 
 fn re_1x04() -> &'static Regex {
@@ -186,6 +189,24 @@ pub fn is_video_file(filename: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn spaced_ep_preserves_explicit_season() {
+        for filename in [
+            "www.1TamilMV.meme - BIGG BOSS (Tamil) S10 EP01 DAY 00 TRUE WEB-DL - 480p - AVC - AAC - 450MB.mkv",
+            "Show.S10.EP01.mkv",
+            "Show_S10_EP01.mkv",
+            "Show S10-EP01.mkv",
+        ] {
+            assert_eq!(
+                super::detect_episode(filename, 1),
+                Some(super::DetectedEpisode {
+                    season: 10,
+                    episode: 1
+                })
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

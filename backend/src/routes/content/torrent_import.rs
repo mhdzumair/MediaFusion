@@ -152,6 +152,9 @@ pub struct FileEntry {
     pub size: i64,
     pub season_number: Option<i32>,
     pub episode_number: Option<i32>,
+    pub episode_end: Option<i32>,
+    #[serde(default = "default_included")]
+    pub included: bool,
     #[serde(default)]
     pub meta_id: Option<String>,
     #[serde(default)]
@@ -162,6 +165,42 @@ pub struct FileEntry {
     pub sports_category: Option<String>,
     #[serde(default)]
     pub episode_title: Option<String>,
+}
+
+pub(super) fn validate_target_files(
+    files: &[FileEntry],
+    meta_type: &str,
+) -> Result<(), &'static str> {
+    let included: Vec<_> = files.iter().filter(|f| f.included).collect();
+    if meta_type == "series" && included.is_empty() {
+        return Err(
+            "Select at least one file and annotate its season and episode before importing",
+        );
+    }
+    let mut indices = std::collections::HashSet::new();
+    for file in included {
+        if file.index < 0 || !indices.insert(file.index) || file.size < 0 {
+            return Err("Invalid or duplicate file index or size");
+        }
+        if file.meta_id.is_some() || file.meta_type.is_some() {
+            return Err("Files must belong to the selected media");
+        }
+        if meta_type == "series"
+            && (file.season_number.is_none_or(|n| n < 0)
+                || file.episode_number.is_none_or(|n| n <= 0)
+                || file.episode_end.is_some_and(|n| {
+                    n < file.episode_number.unwrap_or(1)
+                        || n - file.episode_number.unwrap_or(1) > 1000
+                }))
+        {
+            return Err("Each selected file needs a valid season and episode range");
+        }
+    }
+    Ok(())
+}
+
+fn default_included() -> bool {
+    true
 }
 
 fn enrich_sports_file_entries(files: &mut [FileEntry]) {
@@ -254,21 +293,30 @@ fn enrich_series_file_entries(
     }
 }
 
-fn file_entries_as_json(files: &[FileEntry]) -> Vec<serde_json::Value> {
+pub(super) fn file_entries_as_json(files: &[FileEntry]) -> Vec<serde_json::Value> {
     files
         .iter()
-        .map(|f| {
-            json!({
-                "index": f.index,
-                "filename": f.filename,
-                "size": f.size,
-                "season_number": f.season_number,
-                "episode_number": f.episode_number,
-                "meta_id": f.meta_id,
-                "meta_type": f.meta_type,
-                "meta_title": f.meta_title.as_deref().or(f.episode_title.as_deref()),
-                "episode_title": f.episode_title,
-                "sports_category": f.sports_category,
+        .filter(|f| f.included)
+        .flat_map(|f| {
+            let first = f.episode_number.unwrap_or(0);
+            let last = f
+                .episode_end
+                .unwrap_or(first)
+                .clamp(first, first.saturating_add(1000));
+            (first..=last).map(move |episode| {
+                json!({
+                    "index": f.index,
+                    "filename": f.filename,
+                    "size": f.size,
+                    "season_number": f.season_number,
+                    "episode_number": f.episode_number.map(|_| episode),
+                    "episode_end": f.episode_end,
+                    "meta_id": f.meta_id,
+                    "meta_type": f.meta_type,
+                    "meta_title": f.meta_title.as_deref().or(f.episode_title.as_deref()),
+                    "episode_title": f.episode_title,
+                    "sports_category": f.sports_category,
+                })
             })
         })
         .collect()
@@ -348,6 +396,7 @@ async fn torrent_already_exists_response(
     background: Option<&str>,
     release_date: Option<&str>,
     year: Option<i32>,
+    allow_relink: bool,
 ) -> Response {
     let link_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*)::bigint FROM stream_media_link WHERE stream_id = $1")
@@ -357,7 +406,7 @@ async fn torrent_already_exists_response(
             .unwrap_or(0);
 
     let mut relinked = false;
-    if link_count == 0 {
+    if link_count == 0 && allow_relink {
         relinked = super::import_helpers::try_link_orphan_torrent_stream(
             &state.pool,
             &state.http,
@@ -490,6 +539,7 @@ pub struct MagnetAnalyzeRequest {
     magnet_link: String,
     meta_type: Option<String>,
     meta_id: Option<String>,
+    target_media_id: Option<i32>,
     title: Option<String>,
     /// If true, contact DHT peers to fetch the full file list via BEP-9.
     /// Adds latency (up to `resolve_timeout_secs`); omit for fast analysis.
@@ -590,6 +640,19 @@ pub async fn analyze_magnet(
         }
     };
 
+    let target_media_id = match super::import_helpers::validate_import_target(
+        &state.pool,
+        body.target_media_id,
+        body.meta_type.as_deref().unwrap_or("movie"),
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err((status, message)) => {
+            return (status, Json(json!({"detail": message}))).into_response();
+        }
+    };
+
     let info_hash = match extract_info_hash_from_magnet(&body.magnet_link) {
         Some(h) => h,
         None => {
@@ -634,6 +697,9 @@ pub async fn analyze_magnet(
     // up to resolve_timeout_secs while search hits DB + external providers.
     let search_started = std::time::Instant::now();
     let search_future = async {
+        if target_media_id.is_some() {
+            return (Vec::new(), None);
+        }
         let matches = super::import_helpers::search_analyze_matches(
             &state,
             UserId::from_auth_id(user_id),
@@ -734,6 +800,7 @@ pub async fn analyze_torrent(
     let mut file_bytes: Option<Bytes> = None;
     let mut meta_type = String::from("movie");
     let mut meta_id: Option<String> = None;
+    let mut target_media_id: Option<i32> = None;
     let mut title: Option<String> = None;
     let mut resolve_files = false;
     let mut resolve_timeout_secs: Option<u64> = None;
@@ -745,6 +812,19 @@ pub async fn analyze_torrent(
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
+            }
+            Some("target_media_id") => {
+                target_media_id = match field.text().await.ok().and_then(|v| v.parse::<i32>().ok())
+                {
+                    Some(id) => Some(id),
+                    None => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"detail": "Invalid target media ID"})),
+                        )
+                            .into_response();
+                    }
+                };
             }
             Some("meta_id") => {
                 meta_id = field.text().await.ok().filter(|s| !s.is_empty());
@@ -767,6 +847,22 @@ pub async fn analyze_torrent(
             }
             _ => {}
         }
+    }
+
+    let target_media_id = match super::import_helpers::validate_import_target(
+        &state.pool,
+        target_media_id,
+        &meta_type,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err((status, message)) => {
+            return (status, Json(json!({"detail": message}))).into_response();
+        }
+    };
+    if let Some(id) = target_media_id {
+        meta_id = Some(format!("mf:{id}"));
     }
 
     let bytes = match file_bytes {
@@ -825,24 +921,32 @@ pub async fn analyze_torrent(
         parser::parse_title(&name)
     };
     let search_title = parsed.title.as_deref().unwrap_or(&name);
-    let matches = super::import_helpers::search_analyze_matches(
-        &state,
-        UserId::from_auth_id(user_id),
-        search_title,
-        parsed.year,
-        &meta_type,
-    )
-    .await;
+    let matches = if target_media_id.is_some() {
+        Vec::new()
+    } else {
+        super::import_helpers::search_analyze_matches(
+            &state,
+            UserId::from_auth_id(user_id),
+            search_title,
+            parsed.year,
+            &meta_type,
+        )
+        .await
+    };
 
-    let meta_match = super::import_helpers::resolve_import_meta_match(
-        &state.pool,
-        meta_id.as_deref(),
-        &meta_type,
-        search_title,
-        parsed.year,
-        &matches,
-    )
-    .await;
+    let meta_match = if target_media_id.is_some() {
+        None
+    } else {
+        super::import_helpers::resolve_import_meta_match(
+            &state.pool,
+            meta_id.as_deref(),
+            &meta_type,
+            search_title,
+            parsed.year,
+            &matches,
+        )
+        .await
+    };
 
     if files.is_empty()
         && let Some(dht_result) = resolve_dht_metadata(
@@ -1054,6 +1158,7 @@ pub async fn import_magnet(
     let mut magnet_link = String::new();
     let mut meta_type = String::from("movie");
     let mut meta_id: Option<String> = None;
+    let mut target_media_id: Option<i32> = None;
     let mut title: Option<String> = None;
     let mut resolution: Option<String> = None;
     let mut quality: Option<String> = None;
@@ -1079,6 +1184,19 @@ pub async fn import_magnet(
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
+            }
+            Some("target_media_id") => {
+                target_media_id = match field.text().await.ok().and_then(|v| v.parse::<i32>().ok())
+                {
+                    Some(id) => Some(id),
+                    None => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"detail": "Invalid target media ID"})),
+                        )
+                            .into_response();
+                    }
+                };
             }
             Some("meta_id") => {
                 meta_id = field.text().await.ok().filter(|s| !s.is_empty());
@@ -1146,7 +1264,16 @@ pub async fn import_magnet(
             }
             Some("file_data") => {
                 if let Ok(raw) = field.text().await {
-                    file_data = serde_json::from_str::<Vec<FileEntry>>(&raw).unwrap_or_default();
+                    file_data = match serde_json::from_str::<Vec<FileEntry>>(&raw) {
+                        Ok(files) => files,
+                        Err(_) => {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"detail": "Invalid file annotations"})),
+                            )
+                                .into_response();
+                        }
+                    };
                 }
             }
             Some("is_anonymous") => {
@@ -1171,6 +1298,22 @@ pub async fn import_magnet(
             }
             _ => {}
         }
+    }
+
+    let target_media_id = match super::import_helpers::validate_import_target(
+        &state.pool,
+        target_media_id,
+        &meta_type,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err((status, message)) => {
+            return (status, Json(json!({"detail": message}))).into_response();
+        }
+    };
+    if let Some(id) = target_media_id {
+        meta_id = Some(format!("mf:{id}"));
     }
 
     if magnet_link.is_empty() {
@@ -1246,6 +1389,7 @@ pub async fn import_magnet(
             background.as_deref(),
             release_date.as_deref(),
             None,
+            target_media_id.is_none(),
         )
         .await;
     }
@@ -1298,25 +1442,36 @@ pub async fn import_magnet(
         .map(str::to_string)
         .unwrap_or_else(|| format!("user_{}", &info_hash[..8.min(info_hash.len())]));
     let primary_title = title.as_deref().unwrap_or(&torrent_name);
+    if target_media_id.is_some()
+        && let Err(message) = validate_target_files(&file_data, &meta_type)
+    {
+        return (StatusCode::BAD_REQUEST, Json(json!({"detail": message}))).into_response();
+    }
     let file_rows = file_entries_as_json(&file_data);
     let sports_category = if meta_type == "sports" {
         parser::detect_sports_category(&name_for_parse).map(str::to_string)
     } else {
         None
     };
-    let prefetch = super::import_helpers::prefetch_torrent_import_metadata(
-        &state.http,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
-        &meta_type,
-        &primary_meta_id,
-        primary_title,
-        sports_category.as_deref(),
-        &file_rows,
-    )
-    .await;
+    let prefetch = if target_media_id.is_some() {
+        Default::default()
+    } else {
+        super::import_helpers::prefetch_torrent_import_metadata(
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            &meta_type,
+            &primary_meta_id,
+            primary_title,
+            sports_category.as_deref(),
+            &file_rows,
+        )
+        .await
+    };
 
-    let media_id = if meta_id.as_ref().is_some_and(|s| !s.is_empty()) {
+    let media_id = if let Some(id) = target_media_id {
+        Some(i64::from(id))
+    } else if meta_id.as_ref().is_some_and(|s| !s.is_empty()) {
         super::import_helpers::resolve_media_for_import(
             &state.pool,
             &state.http,
@@ -1449,6 +1604,9 @@ pub async fn import_magnet(
     )
     .await;
 
+    if let Some(id) = target_media_id {
+        crate::cache::invalidate_media_stream_caches(&state.redis, id).await;
+    }
     let message = if auto_approve {
         "Torrent imported successfully!".to_string()
     } else {
@@ -1502,11 +1660,14 @@ pub async fn import_torrent(
     let mut file_bytes: Option<Bytes> = None;
     let mut meta_type = String::from("movie");
     let mut meta_id: Option<String> = None;
+    let mut target_media_id: Option<i32> = None;
     let mut title: Option<String> = None;
     let mut resolution: Option<String> = None;
     let mut quality: Option<String> = None;
     let mut codec: Option<String> = None;
     let mut languages: Vec<String> = Vec::new();
+    let mut form_audio: Vec<String> = Vec::new();
+    let mut form_hdr: Vec<String> = Vec::new();
     let mut catalogs: Vec<String> = Vec::new();
     let mut force_import = false;
     let mut file_data: Vec<FileEntry> = Vec::new();
@@ -1524,6 +1685,19 @@ pub async fn import_torrent(
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
+            }
+            Some("target_media_id") => {
+                target_media_id = match field.text().await.ok().and_then(|v| v.parse::<i32>().ok())
+                {
+                    Some(id) => Some(id),
+                    None => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"detail": "Invalid target media ID"})),
+                        )
+                            .into_response();
+                    }
+                };
             }
             Some("meta_id") => {
                 meta_id = field.text().await.ok().filter(|s| !s.is_empty());
@@ -1560,6 +1734,28 @@ pub async fn import_torrent(
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(false);
             }
+            Some("audio") => {
+                form_audio = field
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }
+            Some("hdr") => {
+                form_hdr = field
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }
             Some("languages") => {
                 if let Ok(raw) = field.text().await {
                     languages = raw
@@ -1580,7 +1776,16 @@ pub async fn import_torrent(
             }
             Some("file_data") => {
                 if let Ok(raw) = field.text().await {
-                    file_data = serde_json::from_str::<Vec<FileEntry>>(&raw).unwrap_or_default();
+                    file_data = match serde_json::from_str::<Vec<FileEntry>>(&raw) {
+                        Ok(files) => files,
+                        Err(_) => {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"detail": "Invalid file annotations"})),
+                            )
+                                .into_response();
+                        }
+                    };
                 }
             }
             Some("is_anonymous") => {
@@ -1593,6 +1798,22 @@ pub async fn import_torrent(
             }
             _ => {}
         }
+    }
+
+    let target_media_id = match super::import_helpers::validate_import_target(
+        &state.pool,
+        target_media_id,
+        &meta_type,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err((status, message)) => {
+            return (status, Json(json!({"detail": message}))).into_response();
+        }
+    };
+    if let Some(id) = target_media_id {
+        meta_id = Some(format!("mf:{id}"));
     }
 
     let bytes = match file_bytes {
@@ -1623,7 +1844,7 @@ pub async fn import_torrent(
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
 
-    let torrent_name = title.clone().unwrap_or_else(|| torrent.name.clone());
+    let torrent_name = torrent.name.clone();
     let total_size: i64 = torrent.length;
     let file_count = torrent
         .files
@@ -1676,6 +1897,7 @@ pub async fn import_torrent(
             background.as_deref(),
             release_date.as_deref(),
             None,
+            target_media_id.is_none(),
         )
         .await;
     }
@@ -1702,6 +1924,27 @@ pub async fn import_torrent(
         parsed.codec = Some(c.clone());
     }
 
+    if !form_audio.is_empty() {
+        parsed.audio = form_audio;
+    }
+    if !form_hdr.is_empty() {
+        parsed.hdr = form_hdr;
+    }
+
+    if target_media_id.is_some() {
+        let source_files = analyze_files_from_torrent(&torrent);
+        for file in &mut file_data {
+            let Some(source) = source_files
+                .iter()
+                .find(|source| source["index"].as_i64() == Some(i64::from(file.index)))
+            else {
+                return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Annotation references a file that is not in this torrent"}))).into_response();
+            };
+            file.filename = source["path"].as_str().unwrap_or_default().to_string();
+            file.size = source["size"].as_i64().unwrap_or(0);
+        }
+    }
+
     let mut effective_files: Vec<FileEntry> = if !file_data.is_empty() {
         file_data
     } else if let Some(fs) = &torrent.files {
@@ -1716,6 +1959,8 @@ pub async fn import_torrent(
                         size: f.length,
                         season_number: None,
                         episode_number: None,
+                        episode_end: None,
+                        included: true,
                         meta_id: None,
                         meta_type: None,
                         meta_title: None,
@@ -1746,25 +1991,36 @@ pub async fn import_torrent(
         .map(str::to_string)
         .unwrap_or_else(|| format!("user_{}", &info_hash[..8.min(info_hash.len())]));
     let primary_title = title.as_deref().unwrap_or(&torrent_name);
+    if target_media_id.is_some()
+        && let Err(message) = validate_target_files(&effective_files, &meta_type)
+    {
+        return (StatusCode::BAD_REQUEST, Json(json!({"detail": message}))).into_response();
+    }
     let file_rows = file_entries_as_json(&effective_files);
     let sports_category = if meta_type == "sports" {
         parser::detect_sports_category(&torrent_name).map(str::to_string)
     } else {
         None
     };
-    let prefetch = super::import_helpers::prefetch_torrent_import_metadata(
-        &state.http,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
-        &meta_type,
-        &primary_meta_id,
-        primary_title,
-        sports_category.as_deref(),
-        &file_rows,
-    )
-    .await;
+    let prefetch = if target_media_id.is_some() {
+        Default::default()
+    } else {
+        super::import_helpers::prefetch_torrent_import_metadata(
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            &meta_type,
+            &primary_meta_id,
+            primary_title,
+            sports_category.as_deref(),
+            &file_rows,
+        )
+        .await
+    };
 
-    let media_id = if meta_id.as_ref().is_some_and(|s| !s.is_empty()) {
+    let media_id = if let Some(id) = target_media_id {
+        Some(i64::from(id))
+    } else if meta_id.as_ref().is_some_and(|s| !s.is_empty()) {
         super::import_helpers::resolve_media_for_import(
             &state.pool,
             &state.http,
@@ -1917,6 +2173,9 @@ pub async fn import_torrent(
     )
     .await;
 
+    if let Some(id) = target_media_id {
+        crate::cache::invalidate_media_stream_caches(&state.redis, id).await;
+    }
     let message = if auto_approve {
         "Torrent imported successfully!".to_string()
     } else {
@@ -1938,4 +2197,63 @@ pub async fn import_torrent(
         })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod media_import_tests {
+    use super::*;
+
+    fn file(index: i32, season: i32, episode: i32) -> FileEntry {
+        serde_json::from_value(json!({
+            "index": index, "filename": format!("Show.S{season:02}E{episode:02}.mkv"),
+            "size": 1234, "season_number": season, "episode_number": episode,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn contextual_import_preserves_seasons_indices_ranges_and_exclusions() {
+        let first = file(2, 0, 1);
+        let mut range = file(7, 2, 3);
+        range.episode_end = Some(5);
+        let mut excluded = file(9, 3, 1);
+        excluded.included = false;
+        let files = vec![first, range, excluded];
+        assert!(validate_target_files(&files, "series").is_ok());
+        let rows = file_entries_as_json(&files);
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0]["index"], 2);
+        assert_eq!(rows[0]["season_number"], 0);
+        for (row, episode) in rows[1..].iter().zip(3..=5) {
+            assert_eq!(row["index"], 7);
+            assert_eq!(row["season_number"], 2);
+            assert_eq!(row["episode_number"], episode);
+        }
+    }
+
+    #[test]
+    fn contextual_import_rejects_missing_mapping_and_cross_media_files() {
+        assert!(validate_target_files(&[], "series").is_err());
+        let mut entry = file(0, 1, 1);
+        entry.episode_number = None;
+        assert!(validate_target_files(&[entry.clone()], "series").is_err());
+        entry.episode_number = Some(3);
+        entry.episode_end = Some(1);
+        assert!(validate_target_files(&[entry.clone()], "series").is_err());
+        entry.episode_end = None;
+        entry.meta_id = Some("tt1234567".into());
+        assert!(validate_target_files(&[entry], "series").is_err());
+        assert!(validate_target_files(&[file(0, 1, 1), file(0, 2, 1)], "series").is_err());
+    }
+
+    #[test]
+    fn contextual_import_rejects_invalid_numbers_and_empty_selection() {
+        let mut entry = file(0, 1, 1);
+        entry.included = false;
+        assert!(validate_target_files(&[entry], "series").is_err());
+        assert!(validate_target_files(&[file(-1, 1, 1)], "series").is_err());
+        assert!(validate_target_files(&[file(0, -1, 1)], "series").is_err());
+        assert!(validate_target_files(&[file(0, 1, 0)], "series").is_err());
+        assert!(validate_target_files(&[file(0, 0, 1)], "series").is_ok());
+    }
 }

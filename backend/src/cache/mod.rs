@@ -174,6 +174,12 @@ pub async fn invalidate_catalog_and_metadata_caches(client: &RedisClient) {
     }
 }
 
+/// Invalidate all provider/user scopes and episodes for a media item's streams.
+pub async fn invalidate_media_stream_caches(client: &RedisClient, media_id: i32) {
+    delete_by_pattern(client, &format!("stream_data:movie:{media_id}:*")).await;
+    delete_by_pattern(client, &format!("stream_data:series:{media_id}:*")).await;
+}
+
 async fn delete_by_pattern(client: &RedisClient, pattern: &str) {
     let mut cursor = "0".to_string();
     loop {
