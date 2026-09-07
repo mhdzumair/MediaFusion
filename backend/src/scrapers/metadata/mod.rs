@@ -608,7 +608,7 @@ pub async fn refresh_media_from_providers(
     provider_filter: Option<&[String]>,
 ) -> (Vec<String>, String) {
     let is_series = media_type == "series";
-    let ext_rows: Vec<(String, String)> =
+    let mut ext_rows: Vec<(String, String)> =
         sqlx::query_as("SELECT provider, external_id FROM media_external_id WHERE media_id = $1")
             .bind(media_id)
             .fetch_all(pool)
@@ -617,6 +617,22 @@ pub async fn refresh_media_from_providers(
 
     if ext_rows.is_empty() {
         return (vec![], "No external IDs linked to this media.".to_string());
+    }
+
+    // IMDb responses do not include an episode guide. Resolve an IMDb-linked
+    // show through TMDB before refreshing so its season and episode data is
+    // stored even when TMDB was not linked previously.
+    let can_refresh_tmdb = provider_filter
+        .map(|providers| providers.iter().any(|provider| provider == "tmdb"))
+        .unwrap_or(true);
+    if is_series
+        && can_refresh_tmdb
+        && !ext_rows.iter().any(|(provider, _)| provider == "tmdb")
+        && let Some((_, imdb_id)) = ext_rows.iter().find(|(provider, _)| provider == "imdb")
+        && let Some(tmdb_meta) = tmdb::find_by_external(http, &opts, "imdb_id", imdb_id, true).await
+        && let Some(tmdb_id) = tmdb_meta.external_id("tmdb")
+    {
+        ext_rows.push(("tmdb".to_string(), tmdb_id.to_string()));
     }
 
     let priority = ["imdb", "mal", "kitsu", "anilist", "tmdb", "tvdb"];

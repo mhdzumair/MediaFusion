@@ -5,6 +5,8 @@ import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ListPagination } from '@/components/ui/list-pagination'
@@ -48,6 +50,7 @@ import {
   ShieldOff,
   CheckCircle,
   XCircle,
+  Plus,
 } from 'lucide-react'
 import {
   useCatalogItem,
@@ -70,7 +73,7 @@ import { ContentLikesProvider } from '@/contexts/ContentLikesContext'
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
 import { useAnnotateFiles } from '@/hooks/useFileLinks'
 import { buildEpisodeAnnotationUpdates } from '@/lib/fileAnnotation'
-import { catalogApi } from '@/lib/api'
+import { catalogApi, userMetadataApi, type EpisodeAddRequest, type SeasonAddRequest } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { useToast } from '@/hooks/use-toast'
@@ -111,6 +114,117 @@ import { Poster, Backdrop } from '@/components/ui/poster'
 import type { ScrapeResponse } from '@/lib/api/scrapers'
 import { scrapersApi } from '@/lib/api/scrapers'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+function SeriesEpisodeCreator({
+  mediaId,
+  seasons,
+  onCreated,
+}: {
+  mediaId: number
+  seasons: { season_number: number; episodes: { episode_number: number }[] }[]
+  onCreated: (season: number, episode?: number) => void
+}) {
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<'season' | 'episode'>('season')
+  const [seasonNumber, setSeasonNumber] = useState(() =>
+    String(Math.max(0, ...seasons.map((s) => s.season_number)) + 1),
+  )
+  const [episodeNumber, setEpisodeNumber] = useState('1')
+  const [title, setTitle] = useState('')
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const season = Number(seasonNumber)
+      const episode = Number(episodeNumber)
+      if (!Number.isInteger(season) || season < 0) throw new Error('Enter a valid season number.')
+      if (mode === 'season') {
+        const data: SeasonAddRequest = { season_number: season, name: title.trim() || undefined, episodes: [] }
+        return userMetadataApi.addSeason(mediaId, data)
+      }
+      if (!Number.isInteger(episode) || episode < 1) throw new Error('Enter a valid episode number.')
+      const data: EpisodeAddRequest = {
+        season_number: season,
+        episodes: [{ episode_number: episode, title: title.trim() || `Episode ${episode}` }],
+      }
+      return userMetadataApi.addEpisodes(mediaId, data)
+    },
+    onSuccess: () => {
+      const season = Number(seasonNumber)
+      const episode = mode === 'episode' ? Number(episodeNumber) : undefined
+      toast({ title: mode === 'season' ? 'Season created' : 'Episode created' })
+      setOpen(false)
+      onCreated(season, episode)
+    },
+    onError: (error: Error) => toast({ variant: 'destructive', title: 'Could not save', description: error.message }),
+  })
+  const hasSeasons = seasons.length > 0
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button type="button" variant="outline" size="sm" className="gap-1.5 rounded-xl" onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" /> Add season or episode
+      </Button>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add series metadata</DialogTitle>
+          <DialogDescription>
+            Create a missing season or episode. These entries remain editable from this page.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={mode === 'season' ? 'default' : 'outline'}
+              onClick={() => setMode('season')}
+            >
+              Season
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={mode === 'episode' ? 'default' : 'outline'}
+              disabled={!hasSeasons}
+              onClick={() => setMode('episode')}
+            >
+              Episode
+            </Button>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="season-number">Season number</Label>
+            <Input
+              id="season-number"
+              inputMode="numeric"
+              value={seasonNumber}
+              onChange={(event) => setSeasonNumber(event.target.value)}
+            />
+          </div>
+          {mode === 'episode' && (
+            <div className="grid gap-2">
+              <Label htmlFor="episode-number">Episode number</Label>
+              <Input
+                id="episode-number"
+                inputMode="numeric"
+                value={episodeNumber}
+                onChange={(event) => setEpisodeNumber(event.target.value)}
+              />
+            </div>
+          )}
+          <div className="grid gap-2">
+            <Label htmlFor="entry-title">
+              {mode === 'season' ? 'Season name (optional)' : 'Episode title (optional)'}
+            </Label>
+            <Input id="entry-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+          </div>
+          <Button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : `Create ${mode}`}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 // Stream Action Dialog Component
 interface StreamActionDialogProps {
@@ -2368,36 +2482,59 @@ export function ContentDetailPage() {
           )}
 
           {/* Series Season/Episode Selector */}
-          {catalogType === 'series' && seasons.length > 0 && (
-            <SeriesEpisodePicker
-              seasons={seasons}
-              selectedSeason={selectedSeason}
-              selectedEpisode={selectedEpisode}
-              onSeasonChange={(season) => {
-                setSelectedSeason(season)
-                setSelectedEpisode(undefined)
-              }}
-              onEpisodeChange={setSelectedEpisode}
-              isImportBusy={isImportBusy}
-              onEpisodeImport={
-                isAuthenticated
-                  ? (files, season, episode) => {
+          {catalogType === 'series' && (
+            <div className="space-y-3">
+              {isAdmin && (
+                <div className="flex justify-end">
+                  <SeriesEpisodeCreator
+                    mediaId={item.id}
+                    seasons={seasons}
+                    onCreated={async (season, episode) => {
+                      await refetchCatalogItem()
                       setSelectedSeason(season)
                       setSelectedEpisode(episode)
-                      mediaImportRef.current?.importFiles(files, season, episode)
-                    }
-                  : undefined
-              }
-              isAdmin={isAdmin}
-              onDeleteEpisode={handleDeleteEpisode}
-              isDeletingEpisode={deleteEpisodeAdmin.isPending}
-              onDeleteSeason={handleDeleteSeason}
-              isDeletingSeason={deleteSeasonAdmin.isPending}
-              onBulkDeleteSeasons={isAdmin ? handleBulkDeleteSeasons : undefined}
-              onBulkDeleteEpisodes={isAdmin ? handleBulkDeleteEpisodes : undefined}
-              isBulkDeleting={bulkDeleteSeasonsAdmin.isPending || bulkDeleteEpisodesAdmin.isPending}
-              onEpisodeEditSuccess={handleEpisodeEditSuccess}
-            />
+                    }}
+                  />
+                </div>
+              )}
+              {seasons.length > 0 ? (
+                <SeriesEpisodePicker
+                  seasons={seasons}
+                  selectedSeason={selectedSeason}
+                  selectedEpisode={selectedEpisode}
+                  onSeasonChange={(season) => {
+                    setSelectedSeason(season)
+                    setSelectedEpisode(undefined)
+                  }}
+                  onEpisodeChange={setSelectedEpisode}
+                  isImportBusy={isImportBusy}
+                  onEpisodeImport={
+                    isAuthenticated
+                      ? (files, season, episode) => {
+                          setSelectedSeason(season)
+                          setSelectedEpisode(episode)
+                          mediaImportRef.current?.importFiles(files, season, episode)
+                        }
+                      : undefined
+                  }
+                  isAdmin={isAdmin}
+                  onDeleteEpisode={handleDeleteEpisode}
+                  isDeletingEpisode={deleteEpisodeAdmin.isPending}
+                  onDeleteSeason={handleDeleteSeason}
+                  isDeletingSeason={deleteSeasonAdmin.isPending}
+                  onBulkDeleteSeasons={isAdmin ? handleBulkDeleteSeasons : undefined}
+                  onBulkDeleteEpisodes={isAdmin ? handleBulkDeleteEpisodes : undefined}
+                  isBulkDeleting={bulkDeleteSeasonsAdmin.isPending || bulkDeleteEpisodesAdmin.isPending}
+                  onEpisodeEditSuccess={handleEpisodeEditSuccess}
+                />
+              ) : (
+                <Card className="glass border-dashed border-border/60">
+                  <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                    No seasons or episodes are stored yet. Refresh from TMDB, or add the missing entries above.
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
 
           {/* Streams Section */}

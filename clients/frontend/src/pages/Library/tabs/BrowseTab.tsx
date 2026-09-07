@@ -299,8 +299,9 @@ export function BrowseTab() {
     genre: selectedGenre || undefined,
     search: searchMode === 'title' ? debouncedSearch || undefined : undefined,
     external_id: searchMode === 'external_id' ? debouncedSearch || undefined : undefined,
-    // Exact ID lookups should not require streams (keyword-blocked / new imports often have none).
-    has_streams: searchMode === 'external_id' ? false : undefined,
+    // Searching is an explicit request to find media. Include entries that do not
+    // have streams yet; the default browse view remains limited to available media.
+    has_streams: debouncedSearch.trim() ? false : undefined,
     sort,
     sort_dir: sortDir,
     page_size: pageSize,

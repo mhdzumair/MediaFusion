@@ -442,7 +442,7 @@ pub async fn browse_catalog(
     }
 
     // Default: only media with available streams (matches Python's has_streams=true default).
-    // Exact external-ID lookups skip this so admins can find keyword-blocked / streamless media.
+    // Search callers can explicitly opt out to find streamless media as well.
     if params.has_streams.unwrap_or(true) && !is_exact_external_lookup {
         where_parts.push("m.total_streams > 0".to_string());
     }

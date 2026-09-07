@@ -1014,7 +1014,9 @@ pub async fn add_season_to_series(
         )
             .into_response();
     }
-    if creator_id != Some(user_id) {
+    let can_manage_series = creator_id == Some(user_id)
+        || crate::routes::auth_guard::is_privileged(&headers, &state.config.secret_key_raw);
+    if !can_manage_series {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Can only modify your own metadata"})),
@@ -1165,7 +1167,9 @@ pub async fn add_episodes_to_series(
         )
             .into_response();
     }
-    if creator_id != Some(user_id) {
+    let can_manage_series = creator_id == Some(user_id)
+        || crate::routes::auth_guard::is_privileged(&headers, &state.config.secret_key_raw);
+    if !can_manage_series {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Can only modify your own metadata"})),
