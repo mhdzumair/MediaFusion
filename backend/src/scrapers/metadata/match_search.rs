@@ -416,12 +416,40 @@ fn dedup_key(entry: &Value) -> Option<String> {
         .or_else(|| entry["id"].as_str().map(|id| format!("primary:{id}")))
 }
 
+fn merge_provider_ids(existing: &mut Value, candidate: &Value) {
+    const ID_FIELDS: &[&str] = &["imdb_id", "tmdb_id", "tvdb_id", "mal_id", "kitsu_id", "anilist_id"];
+    let Some(existing) = existing.as_object_mut() else {
+        return;
+    };
+
+    for field in ID_FIELDS {
+        let is_missing = existing.get(*field).is_none_or(Value::is_null);
+        if is_missing
+            && let Some(value) = candidate.get(*field).filter(|value| !value.is_null())
+        {
+            existing.insert((*field).to_string(), value.clone());
+        }
+    }
+}
+
 fn push_unique(results: &mut Vec<Value>, seen: &mut HashSet<String>, entry: Value) -> bool {
-    if let Some(key) = dedup_key(&entry)
-        && seen.insert(key)
-    {
+    let Some(key) = dedup_key(&entry) else {
+        return false;
+    };
+
+    if seen.insert(key.clone()) {
         results.push(entry);
         return true;
+    }
+
+    // Different provider searches commonly return the same show with different
+    // external IDs. Keep one card, but retain every ID so the linking UI can
+    // offer the TMDB, TVDB, and IMDb mappings together.
+    if let Some(existing) = results
+        .iter_mut()
+        .find(|existing| dedup_key(existing).as_deref() == Some(key.as_str()))
+    {
+        merge_provider_ids(existing, &entry);
     }
     false
 }
@@ -429,5 +457,30 @@ fn push_unique(results: &mut Vec<Value>, seen: &mut HashSet<String>, entry: Valu
 fn tag_match(entry: &mut Value, source: &str) {
     if let Some(obj) = entry.as_object_mut() {
         obj.insert("source".to_string(), json!(source));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deduplicated_matches_keep_ids_from_each_provider() {
+        let mut results = vec![];
+        let mut seen = HashSet::new();
+        assert!(push_unique(
+            &mut results,
+            &mut seen,
+            json!({"id": "tt36270432", "imdb_id": "tt36270432", "tvdb_id": "460973"}),
+        ));
+        assert!(!push_unique(
+            &mut results,
+            &mut seen,
+            json!({"id": "tt36270432", "imdb_id": "tt36270432", "tmdb_id": "286360"}),
+        ));
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["tmdb_id"], "286360");
+        assert_eq!(results[0]["tvdb_id"], "460973");
     }
 }
