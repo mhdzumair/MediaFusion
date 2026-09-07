@@ -1054,7 +1054,7 @@ pub async fn add_season_to_series(
             .into_response();
     }
 
-    let season_id: i64 = match sqlx::query_scalar(
+    let season_id: i32 = match sqlx::query_scalar(
         "INSERT INTO season (series_id, season_number, name, overview, episode_count) VALUES ($1, $2, $3, $4, $5) RETURNING id",
     )
     .bind(series_id)
@@ -1074,8 +1074,8 @@ pub async fn add_season_to_series(
 
     let mut episodes_json = Vec::new();
     for ep in &body.episodes {
-        let ep_id: i64 = match sqlx::query_scalar(
-            "INSERT INTO episode (season_id, episode_number, title, overview, runtime_minutes, is_user_created, created_by_user_id) VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING id",
+        let ep_id: i32 = match sqlx::query_scalar(
+            "INSERT INTO episode (season_id, episode_number, title, overview, runtime_minutes, is_user_created, is_user_addition, created_by_user_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, true, false, $6, NOW(), NOW()) RETURNING id",
         )
         .bind(season_id)
         .bind(ep.episode_number)
@@ -1208,8 +1208,8 @@ pub async fn add_episodes_to_series(
 
     let mut created_episodes = Vec::new();
     for ep in &body.episodes {
-        match sqlx::query_scalar::<_, i64>(
-            "INSERT INTO episode (season_id, episode_number, title, overview, runtime_minutes, is_user_created, created_by_user_id) VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING id",
+        match sqlx::query_scalar::<_, i32>(
+            "INSERT INTO episode (season_id, episode_number, title, overview, runtime_minutes, is_user_created, is_user_addition, created_by_user_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, true, false, $6, NOW(), NOW()) RETURNING id",
         )
         .bind(season_id)
         .bind(ep.episode_number)
