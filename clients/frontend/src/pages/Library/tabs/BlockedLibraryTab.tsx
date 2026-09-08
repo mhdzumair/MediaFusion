@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Ban, Search, CheckCircle, Loader2, ShieldAlert, Calendar, User, Tag, EyeOff } from 'lucide-react'
 import { adminApi, type BlockedMediaItem } from '@/lib/api/admin'
 import { useToast } from '@/hooks/use-toast'
+import { useRole } from '@/hooks/useRole'
 import { Poster } from '@/components/ui/poster'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { saveContentDetailReturnUrl } from '../browseNavigation'
@@ -232,9 +233,10 @@ function BlockedItemCard({
 export function BlockedLibraryTab() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
+  const { isAdmin } = useRole()
 
   const catalogType = (searchParams.get('type') as 'movie' | 'series' | 'tv') || ''
-  const filter = searchParams.get('b_filter') || 'all_restricted'
+  const filter = isAdmin ? searchParams.get('b_filter') || 'all_restricted' : 'keyword_blocked_only'
   const page = Math.max(1, parseInt(searchParams.get('b_page') || '1', 10) || 1)
   const pageSize = parsePageSize(searchParams.get('b_page_size'))
   const [search, setSearch] = useState('')
@@ -310,7 +312,9 @@ export function BlockedLibraryTab() {
           <p className="text-xs text-muted-foreground">
             {data
               ? `${data.total} item${data.total !== 1 ? 's' : ''} restricted`
-              : 'Admin view — restricted items are hidden from regular users'}
+              : isAdmin
+                ? 'Admin view — restricted items are hidden from regular users'
+                : 'Keyword-blocked items are hidden from regular users'}
           </p>
         </div>
       </div>
@@ -330,18 +334,20 @@ export function BlockedLibraryTab() {
           />
         </div>
 
-        <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[175px] rounded-xl">
-            <SelectValue placeholder="All Restricted" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all_restricted">All Restricted</SelectItem>
-            <SelectItem value="manual">Manually Blocked</SelectItem>
-            <SelectItem value="keyword_blocked">Keyword Blocked</SelectItem>
-            <SelectItem value="keyword_blocked_only">Keyword Blocked Only</SelectItem>
-            <SelectItem value="nsfw_flagged">NSFW Flagged</SelectItem>
-          </SelectContent>
-        </Select>
+        {isAdmin && (
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-[175px] rounded-xl">
+              <SelectValue placeholder="All Restricted" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all_restricted">All Restricted</SelectItem>
+              <SelectItem value="manual">Manually Blocked</SelectItem>
+              <SelectItem value="keyword_blocked">Keyword Blocked</SelectItem>
+              <SelectItem value="keyword_blocked_only">Keyword Blocked Only</SelectItem>
+              <SelectItem value="nsfw_flagged">NSFW Flagged</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
 
         <Select value={catalogType || 'all'} onValueChange={setType}>
           <SelectTrigger className="w-[140px] rounded-xl">

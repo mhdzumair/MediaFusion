@@ -475,12 +475,12 @@ function NsfwStatusSection({
 function KeywordOverrideSection({
   mediaId,
   isOverridden,
-  isAdmin,
+  canOverride,
   onSuccess,
 }: {
   mediaId: number
   isOverridden: boolean
-  isAdmin: boolean
+  canOverride: boolean
   onSuccess: () => void
 }) {
   const { toast } = useToast()
@@ -499,7 +499,7 @@ function KeywordOverrideSection({
     },
   })
 
-  if (!isAdmin) return null
+  if (!canOverride) return null
 
   return (
     <div className="pt-4 border-t border-border/30">
@@ -2417,15 +2417,16 @@ export function ContentDetailPage() {
                   />
                 )}
 
-                {/* Keyword block override — admin only, shown when keyword-blocked */}
-                {item.is_keyword_blocked && isAdmin && (
+                {/* Keyword block override — moderator/admin, shown when keyword-blocked */}
+                {item.is_keyword_blocked && isModerator && (
                   <KeywordOverrideSection
                     mediaId={mediaId}
                     isOverridden={item.keyword_block_override ?? false}
-                    isAdmin={isAdmin}
-                    onSuccess={() =>
+                    canOverride={isModerator}
+                    onSuccess={() => {
                       queryClient.invalidateQueries({ queryKey: ['catalog', catalogType, mediaId.toString()] })
-                    }
+                      queryClient.invalidateQueries({ queryKey: ['admin', 'blocked-media'] })
+                    }}
                   />
                 )}
 

@@ -147,8 +147,16 @@ pub struct BlockedMediaQuery {
     #[serde(rename = "type")]
     pub media_type: Option<String>,
     pub search: Option<String>,
-    /// "blocked" (default) | "nsfw_flagged" | "nsfw_reviewed"
+    /// Restriction filter. Moderator requests are always reduced to `keyword_blocked_only`.
     pub filter: Option<String>,
+}
+
+fn effective_blocked_media_filter(requested_filter: Option<&str>, viewer_is_admin: bool) -> &str {
+    if viewer_is_admin {
+        requested_filter.unwrap_or("blocked")
+    } else {
+        "keyword_blocked_only"
+    }
 }
 
 /// DELETE /api/v1/admin/metadata/{media_id}
@@ -345,24 +353,13 @@ pub async fn list_blocked_media(
     State(state): State<Arc<AppState>>,
     Query(params): Query<BlockedMediaQuery>,
 ) -> impl IntoResponse {
-    // nsfw_flagged / nsfw_reviewed filters are admin-only.
-    let filter = params.filter.as_deref().unwrap_or("blocked");
-    let viewer_is_admin;
-
-    if filter == "nsfw_flagged" || filter == "nsfw_reviewed" {
-        if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-            return forbidden();
-        }
-        viewer_is_admin = true;
-    } else {
-        // Blocked media requires at least moderator.
-        match validate_moderator_or_admin(&headers, &state.config.secret_key_raw) {
-            Some(_) => {
-                viewer_is_admin = validate_admin(&headers, &state.config.secret_key_raw).is_some();
-            }
-            None => return forbidden(),
-        }
+    // Admins can inspect every restriction type. Moderators are limited to media
+    // blocked exclusively by the keyword filter, regardless of the requested filter.
+    if validate_moderator_or_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
     }
+    let viewer_is_admin = validate_admin(&headers, &state.config.secret_key_raw).is_some();
+    let filter = effective_blocked_media_filter(params.filter.as_deref(), viewer_is_admin);
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
@@ -508,22 +505,31 @@ pub async fn toggle_keyword_block_override(
     State(state): State<Arc<AppState>>,
     Path(media_id): Path<i32>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_moderator_or_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
     match sqlx::query_scalar::<_, bool>(
-        "UPDATE media SET keyword_block_override = NOT keyword_block_override WHERE id = $1 RETURNING keyword_block_override",
+        "UPDATE media SET keyword_block_override = NOT keyword_block_override \
+         WHERE id = $1 AND is_keyword_blocked = true \
+         RETURNING keyword_block_override",
     )
     .bind(media_id)
     .fetch_optional(&state.pool)
     .await
     {
-        Ok(Some(new_val)) => Json(json!({
-            "id": media_id,
-            "keyword_block_override": new_val,
-            "message": if new_val { "Keyword block overridden — media is now visible" } else { "Keyword block override removed" },
-        })).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"detail": "Media not found"}))).into_response(),
+        Ok(Some(new_val)) => {
+            cache::invalidate_catalog_and_metadata_caches(&state.redis).await;
+            Json(json!({
+                "id": media_id,
+                "keyword_block_override": new_val,
+                "message": if new_val { "Keyword block overridden — media is now visible" } else { "Keyword block override removed" },
+            })).into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Keyword-blocked media not found"})),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!("toggle_keyword_block_override id={media_id}: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -1552,4 +1558,37 @@ pub async fn get_source_health(
         "sources": sources,
     }))
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_blocked_media_filter;
+
+    #[test]
+    fn moderator_blocked_media_filter_is_always_keyword_only() {
+        for requested in [
+            None,
+            Some("all_restricted"),
+            Some("manual"),
+            Some("nsfw_flagged"),
+        ] {
+            assert_eq!(
+                effective_blocked_media_filter(requested, false),
+                "keyword_blocked_only"
+            );
+        }
+    }
+
+    #[test]
+    fn admin_blocked_media_filter_is_preserved() {
+        assert_eq!(effective_blocked_media_filter(None, true), "blocked");
+        assert_eq!(
+            effective_blocked_media_filter(Some("all_restricted"), true),
+            "all_restricted"
+        );
+        assert_eq!(
+            effective_blocked_media_filter(Some("nsfw_flagged"), true),
+            "nsfw_flagged"
+        );
+    }
 }

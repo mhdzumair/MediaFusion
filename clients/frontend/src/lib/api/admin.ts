@@ -587,7 +587,8 @@ export const adminApi = {
   // ============================================
 
   /**
-   * List all blocked media items (Moderator/Admin only).
+   * List blocked media. Admins can select any filter; moderators receive only
+   * media blocked exclusively by the keyword filter.
    */
   getBlockedMedia: async (params: BlockedMediaParams = {}): Promise<BlockedMediaListResponse> => {
     return adminGet<BlockedMediaListResponse>('/media/blocked', {
@@ -615,6 +616,7 @@ export const adminApi = {
     return adminPost<BlockMediaResponse>(`/metadata/${mediaId}/unblock`, {})
   },
 
+  /** Toggle a media keyword-block override (Moderator/Admin only). */
   toggleKeywordOverride: async (
     mediaId: number,
   ): Promise<{ id: number; keyword_block_override: boolean; message: string }> => {

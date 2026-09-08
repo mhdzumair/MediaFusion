@@ -33,11 +33,11 @@ const LIBRARY_TAB_KEY = 'library_active_tab'
 export function LibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: profiles, isLoading: profilesLoading } = useProfiles()
-  const { isAdmin } = useRole()
+  const { isAdmin, isModerator } = useRole()
   const hasDebridProfile = profiles?.some((p) => p.streaming_providers?.has_debrid) ?? false
 
-  // Blocked-content view: ?blocked=true (admin only)
-  const isBlockedView = searchParams.get('blocked') === 'true' && isAdmin
+  // Admins see all restricted content; moderators see keyword-only blocks.
+  const isBlockedView = searchParams.get('blocked') === 'true' && isModerator
   // NSFW review view: ?nsfw=true (admin only)
   const isNsfwView = searchParams.get('nsfw') === 'true' && isAdmin
 
@@ -98,7 +98,7 @@ export function LibraryPage() {
     )
   }
 
-  // Admin blocked-content view — no debrid requirement
+  // Moderation blocked-content view — no debrid requirement
   if (isBlockedView) {
     return (
       <div className="space-y-6 p-6 max-w-screen-xl mx-auto">
@@ -110,7 +110,7 @@ export function LibraryPage() {
               </div>
               <div>
                 <h1 className="font-display text-3xl font-semibold tracking-tight">Blocked Content</h1>
-                <p className="text-muted-foreground text-sm">Admin view</p>
+                <p className="text-muted-foreground text-sm">{isAdmin ? 'Admin view' : 'Keyword-blocked content'}</p>
               </div>
             </div>
             <Button
@@ -194,9 +194,30 @@ export function LibraryPage() {
             <p className="text-muted-foreground max-w-sm">
               Configure a profile with at least one streaming provider (debrid service) to access library content.
             </p>
-            <Button asChild>
-              <Link to="/dashboard/configure">Configure a Profile</Link>
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button asChild>
+                <Link to="/dashboard/configure">Configure a Profile</Link>
+              </Button>
+              {isModerator && (
+                <Button
+                  variant="outline"
+                  className="gap-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() =>
+                    setSearchParams(
+                      (prev) => {
+                        const params = new URLSearchParams(prev)
+                        params.set('blocked', 'true')
+                        return params
+                      },
+                      { replace: true },
+                    )
+                  }
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  Blocked Content
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -240,8 +261,8 @@ export function LibraryPage() {
               </Button>
             )}
 
-            {/* Admin shortcut to blocked content */}
-            {isAdmin && (
+            {/* Moderator/admin shortcut to blocked content */}
+            {isModerator && (
               <Button
                 variant="outline"
                 size="sm"
