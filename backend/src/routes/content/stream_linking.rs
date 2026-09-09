@@ -30,8 +30,8 @@ use sha2::Sha256;
 use uuid::Uuid;
 
 use super::file_annotation::{
-    apply_file_annotation_updates, resolve_annotation_media_id, BulkFileAnnotationRequest,
-    FileAnnotationUpdate,
+    BulkFileAnnotationRequest, FileAnnotationUpdate, apply_file_annotation_updates,
+    resolve_annotation_media_id,
 };
 use super::stream_suggestions::user_can_auto_approve;
 use crate::db::stream_store::stream_file_display_name;
@@ -637,11 +637,11 @@ pub async fn update_file_links(
             .into_response();
     }
 
-    let media_id = match resolve_annotation_media_id(&state.pool, body.stream_id, Some(body.media_id)).await
-    {
-        Ok(id) => id,
-        Err(resp) => return resp,
-    };
+    let media_id =
+        match resolve_annotation_media_id(&state.pool, body.stream_id, Some(body.media_id)).await {
+            Ok(id) => id,
+            Err(resp) => return *resp,
+        };
 
     let updates: Vec<FileAnnotationUpdate> = body
         .updates
@@ -706,11 +706,11 @@ pub async fn annotate_files(
             .into_response();
     }
 
-    let media_id = match resolve_annotation_media_id(&state.pool, body.stream_id, body.media_id).await
-    {
-        Ok(id) => id,
-        Err(resp) => return resp,
-    };
+    let media_id =
+        match resolve_annotation_media_id(&state.pool, body.stream_id, body.media_id).await {
+            Ok(id) => id,
+            Err(resp) => return *resp,
+        };
 
     let can_auto_approve = user_can_auto_approve(&state.pool, user_id).await;
 

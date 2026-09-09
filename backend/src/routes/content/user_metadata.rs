@@ -1825,13 +1825,12 @@ async fn bulk_delete_series_seasons(
             continue;
         }
 
-        if let Err(e) = sqlx::query(
-            "DELETE FROM file_media_link WHERE media_id = $1 AND season_number = $2",
-        )
-        .bind(media_id)
-        .bind(season_number)
-        .execute(&mut *tx)
-        .await
+        if let Err(e) =
+            sqlx::query("DELETE FROM file_media_link WHERE media_id = $1 AND season_number = $2")
+                .bind(media_id)
+                .bind(season_number)
+                .execute(&mut *tx)
+                .await
         {
             errors.push(format!("Season {season_number}: {e}"));
             failed += 1;

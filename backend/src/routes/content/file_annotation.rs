@@ -1,6 +1,6 @@
-use axum::response::{IntoResponse, Response};
 use axum::Json;
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -35,7 +35,7 @@ pub async fn resolve_annotation_media_id(
     pool: &PgPool,
     stream_id: i32,
     media_id: Option<i32>,
-) -> Result<i32, Response> {
+) -> Result<i32, Box<Response>> {
     if let Some(media_id) = media_id {
         let media_type: Option<crate::db::MediaType> =
             sqlx::query_scalar("SELECT type FROM media WHERE id = $1")
@@ -45,17 +45,17 @@ pub async fn resolve_annotation_media_id(
                 .unwrap_or(None);
 
         return match media_type {
-            None => Err((
+            None => Err(Box::new((
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Media not found"})),
             )
-                .into_response()),
+                .into_response())),
             Some(crate::db::MediaType::Series) => Ok(media_id),
-            Some(_) => Err((
+            Some(_) => Err(Box::new((
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "File annotation updates are only supported for series media"})),
             )
-                .into_response()),
+                .into_response())),
         };
     }
 
@@ -76,11 +76,13 @@ pub async fn resolve_annotation_media_id(
     .unwrap_or(None);
 
     resolved.ok_or_else(|| {
-        (
+        Box::new((
             StatusCode::BAD_REQUEST,
-            Json(json!({"detail": "media_id is required when the stream has no series media link"})),
+            Json(
+                json!({"detail": "media_id is required when the stream has no series media link"}),
+            ),
         )
-            .into_response()
+            .into_response())
     })
 }
 

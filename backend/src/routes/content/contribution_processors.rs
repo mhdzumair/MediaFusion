@@ -535,8 +535,13 @@ async fn process_nzb(
         && meta_type == "series"
     {
         let fallback = data_str(data, "title").unwrap_or(name);
-        import_helpers::ensure_series_episode_metadata(&state.pool, mid as i64, &file_rows, fallback)
-            .await;
+        import_helpers::ensure_series_episode_metadata(
+            &state.pool,
+            mid as i64,
+            &file_rows,
+            fallback,
+        )
+        .await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;

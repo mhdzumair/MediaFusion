@@ -417,16 +417,21 @@ fn dedup_key(entry: &Value) -> Option<String> {
 }
 
 fn merge_provider_ids(existing: &mut Value, candidate: &Value) {
-    const ID_FIELDS: &[&str] = &["imdb_id", "tmdb_id", "tvdb_id", "mal_id", "kitsu_id", "anilist_id"];
+    const ID_FIELDS: &[&str] = &[
+        "imdb_id",
+        "tmdb_id",
+        "tvdb_id",
+        "mal_id",
+        "kitsu_id",
+        "anilist_id",
+    ];
     let Some(existing) = existing.as_object_mut() else {
         return;
     };
 
     for field in ID_FIELDS {
         let is_missing = existing.get(*field).is_none_or(Value::is_null);
-        if is_missing
-            && let Some(value) = candidate.get(*field).filter(|value| !value.is_null())
-        {
+        if is_missing && let Some(value) = candidate.get(*field).filter(|value| !value.is_null()) {
             existing.insert((*field).to_string(), value.clone());
         }
     }
