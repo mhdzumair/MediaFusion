@@ -9,6 +9,7 @@ pub enum HandlerType {
     Html,
     Rss,
     SubsPleaseJson,
+    KnabenJson,
 }
 
 /// Configuration for browsing/crawling recent items from an indexer.
@@ -99,6 +100,128 @@ const GENERIC_SEEDER_SELECTORS: &[&str] = &[
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 pub static ALL_INDEXERS: &[IndexerDef] = &[
+    // ── Knaben (multi-language public index) ────────────────────────────────
+    IndexerDef {
+        key: "knaben",
+        source_name: "Knaben",
+        query_url_templates: &["https://api.knaben.org/v1"],
+        row_selectors: &[],
+        title_selectors: &[],
+        detail_selectors: &[],
+        magnet_selectors: &[],
+        size_selectors: &[],
+        seeder_selectors: &[],
+        supports_movie: true,
+        supports_series: true,
+        supports_anime: true,
+        solve_cloudflare: false,
+        http_fallback: true,
+        pages_per_query: 1,
+        handler: HandlerType::KnabenJson,
+        max_detail_url_length: 260,
+        // Targeted title searches keep its results current without repeatedly
+        // ingesting its broad global feed.
+        crawl: None,
+    },
+    // ── TorrentFunk (English and multi-language releases) ───────────────────
+    IndexerDef {
+        key: "torrentfunk",
+        source_name: "TorrentFunk",
+        query_url_templates: &["https://www.torrentfunk.com/?q={query}&qq=1"],
+        row_selectors: &["table.tf-torrentlist tr"],
+        title_selectors: &["td.tv1 a::text", "td.tv3 a::text", "td.tv a::text"],
+        detail_selectors: &[
+            "td.tv1 a::attr(href)",
+            "td.tv3 a::attr(href)",
+            "td.tv a::attr(href)",
+        ],
+        magnet_selectors: &[],
+        size_selectors: &["td.tf-size::text"],
+        seeder_selectors: &["td.tul::text"],
+        supports_movie: true,
+        supports_series: true,
+        supports_anime: true,
+        solve_cloudflare: false,
+        http_fallback: true,
+        pages_per_query: 1,
+        handler: HandlerType::Html,
+        max_detail_url_length: 260,
+        crawl: None,
+    },
+    // ── Il Corsaro Nero (Italian, Cloudflare) ───────────────────────────────
+    IndexerDef {
+        key: "ilcorsaronero",
+        source_name: "Il Corsaro Nero",
+        query_url_templates: &[
+            "https://ilcorsaronero.link/advsearch.php?search={query}&&page={page}",
+        ],
+        row_selectors: &["tr.odd", "tr.odd2"],
+        title_selectors: &["a.tab::text"],
+        detail_selectors: &["a.tab::attr(href)"],
+        magnet_selectors: &[],
+        size_selectors: &["td:nth-last-child(4)::text"],
+        seeder_selectors: &["td:nth-last-child(3)::text"],
+        supports_movie: true,
+        supports_series: true,
+        supports_anime: false,
+        solve_cloudflare: true,
+        http_fallback: false,
+        pages_per_query: 2,
+        handler: HandlerType::Html,
+        max_detail_url_length: 260,
+        crawl: Some(CrawlConfig {
+            browse_url: "https://ilcorsaronero.link/latest?page={page}",
+            max_pages: 3,
+        }),
+    },
+    // ── Comando Torrents (Brazilian Portuguese) ─────────────────────────────
+    IndexerDef {
+        key: "comando",
+        source_name: "Comando Torrents",
+        query_url_templates: &["https://comandotorrents.to/?s={query}"],
+        row_selectors: &["article.blog-view"],
+        title_selectors: &["h2.entry-title a::text"],
+        detail_selectors: &["h2.entry-title a::attr(href)"],
+        magnet_selectors: &[],
+        size_selectors: &[],
+        seeder_selectors: &[],
+        supports_movie: true,
+        supports_series: true,
+        supports_anime: false,
+        solve_cloudflare: false,
+        http_fallback: true,
+        pages_per_query: 1,
+        handler: HandlerType::Html,
+        max_detail_url_length: 260,
+        crawl: Some(CrawlConfig {
+            browse_url: "https://comandotorrents.to/page/{page}/",
+            max_pages: 3,
+        }),
+    },
+    // ── BluDV (Brazilian Portuguese) ───────────────────────────────────────
+    IndexerDef {
+        key: "bludv",
+        source_name: "BluDV",
+        query_url_templates: &["https://bludvfilmes1.xyz/?s={query}"],
+        row_selectors: &["div.posts > div.post"],
+        title_selectors: &["div.title > a::text"],
+        detail_selectors: &["div.title > a::attr(href)"],
+        magnet_selectors: &[],
+        size_selectors: &[],
+        seeder_selectors: &[],
+        supports_movie: true,
+        supports_series: true,
+        supports_anime: false,
+        solve_cloudflare: false,
+        http_fallback: true,
+        pages_per_query: 1,
+        handler: HandlerType::Html,
+        max_detail_url_length: 260,
+        crawl: Some(CrawlConfig {
+            browse_url: "https://bludvfilmes1.xyz/page/{page}/",
+            max_pages: 3,
+        }),
+    },
     // ── 1337x (CF, stealthy) ─────────────────────────────────────────────────
     IndexerDef {
         key: "x1337",

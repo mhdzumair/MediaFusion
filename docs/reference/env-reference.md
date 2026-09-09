@@ -131,13 +131,13 @@ These 4 variables must be set before MediaFusion will start:
 | `IS_SCRAP_FROM_PROWLARR` | `true` | Enable Prowlarr as a stream source. |
 | `IS_SCRAP_FROM_JACKETT` | `false` | Enable Jackett as a stream source. |
 | `IS_SCRAP_FROM_TORZNAB` | `true` | Enable direct Torznab endpoints as stream sources. |
-| `IS_SCRAP_FROM_PUBLIC_INDEXERS` | `true` | Enable built-in public torrent indexer scrapers (1337x, TPB, YTS, etc.). |
+| `IS_SCRAP_FROM_PUBLIC_INDEXERS` | `true` | Enable built-in public torrent indexer scrapers (Knaben, TorrentFunk, 1337x, TPB, Il Corsaro Nero, Comando, BluDV, YTS, etc.). |
 | `IS_SCRAP_FROM_PUBLIC_USENET_INDEXERS` | `true` | Enable built-in public Usenet indexer scrapers. |
 | `IS_SCRAP_FROM_ZILEAN` | `false` | Fetch cached streams from Zilean DMM. |
 | `IS_SCRAP_FROM_TORRENTIO` | `false` | Fetch streams from Torrentio. |
 | `IS_SCRAP_FROM_MEDIAFUSION` | `false` | Fetch streams from the peer MediaFusion instance. |
 | `IS_SCRAP_FROM_DMM_HASHLIST` | `false` | Ingest torrent hashes from the DMM GitHub hashlist. |
-| `PUBLIC_INDEXERS_LIVE_SEARCH_SITES` | — | Comma-separated list of public indexer keys to use for live search (e.g. `x1337,nyaa`). Empty = all enabled indexers. |
+| `PUBLIC_INDEXERS_LIVE_SEARCH_SITES` | — | Comma-separated list of public indexer keys to use for live search (e.g. `knaben,torrentfunk,ilcorsaronero,comando,bludv`). Empty = all enabled indexers. |
 
 ---
 

@@ -211,6 +211,18 @@ fn spider_name_to_queue(spider_name: &str) -> Option<(&'static str, Option<serde
         "sport_video" => Some(("spider_sport_video", None)),
         "eztv_rss" => Some(("spider_eztv_rss", None)),
         // Registry-crawl spiders — same queue, different payload
+        "ilcorsaronero" => Some((
+            "spider_registry_crawl",
+            Some(serde_json::json!({"indexer":"ilcorsaronero"})),
+        )),
+        "comando" => Some((
+            "spider_registry_crawl",
+            Some(serde_json::json!({"indexer":"comando"})),
+        )),
+        "bludv" => Some((
+            "spider_registry_crawl",
+            Some(serde_json::json!({"indexer":"bludv"})),
+        )),
         "nyaa" => Some((
             "spider_registry_crawl",
             Some(serde_json::json!({"indexer":"nyaa"})),
@@ -2021,6 +2033,27 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "0 0 * * *",
     ),
     (
+        "ilcorsaronero",
+        "Il Corsaro Nero",
+        "scraper",
+        "Scrapes Italian torrents from Il Corsaro Nero",
+        "0 */6 * * *",
+    ),
+    (
+        "comando",
+        "Comando Torrents",
+        "scraper",
+        "Scrapes Brazilian torrents from Comando Torrents",
+        "15 */6 * * *",
+    ),
+    (
+        "bludv",
+        "BluDV",
+        "scraper",
+        "Scrapes Brazilian torrents from BluDV",
+        "30 */6 * * *",
+    ),
+    (
         "x1337",
         "1337x",
         "scraper",
@@ -2251,6 +2284,9 @@ const SCRAPY_SPIDER_IDS: &[&str] = &[
     "wwe_ext",
     "ufc_ext",
     "movies_tv_ext",
+    "ilcorsaronero",
+    "comando",
+    "bludv",
     "x1337",
     "thepiratebay",
     "rutor",
@@ -2545,6 +2581,9 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
 
 /// Registry indexers share the `spider_registry_crawl` queue; filter jobs by payload index.
 const REGISTRY_SPIDER_IDS: &[&str] = &[
+    "ilcorsaronero",
+    "comando",
+    "bludv",
     "nyaa",
     "animetosho",
     "subsplease",

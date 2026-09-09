@@ -253,7 +253,8 @@ fn find_magnet_in_html(html: &str) -> Option<String> {
     use std::sync::OnceLock;
     static MAGNET_RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = MAGNET_RE.get_or_init(|| {
-        regex::Regex::new(r#"magnet:\?xt=urn:btih:[a-fA-F0-9]{40}[^"'<>\s]*"#).unwrap()
+        regex::Regex::new(r#"magnet:\?xt=urn:btih:(?:[a-fA-F0-9]{40}|[a-zA-Z2-7]{32})[^"'<>\s]*"#)
+            .unwrap()
     });
     re.find(html).map(|m| m.as_str().to_string())
 }

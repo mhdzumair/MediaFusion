@@ -1,8 +1,9 @@
 /// Registry-driven public torrent indexer scraper.
 ///
-/// Handles three handler types:
+/// Handles four handler types:
 ///   - Rss          — BT4G RSS feed (plain XML, no challenge)
 ///   - SubsPleaseJson — SubsPlease JSON search API
+///   - KnabenJson   — Knaben's public multi-language index API
 ///   - Html         — CSS-selector HTML parsing, optional TRAWL for CF-protected sites
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -35,7 +36,8 @@ static SIZE_RE: OnceLock<regex::Regex> = OnceLock::new();
 
 fn magnet_re() -> &'static regex::Regex {
     MAGNET_RE.get_or_init(|| {
-        regex::Regex::new(r#"magnet:\?xt=urn:btih:[a-fA-F0-9]{40}[^"'<>\s]*"#).unwrap()
+        regex::Regex::new(r#"magnet:\?xt=urn:btih:(?:[a-fA-F0-9]{40}|[a-zA-Z2-7]{32})[^"'<>\s]*"#)
+            .unwrap()
     })
 }
 
@@ -186,6 +188,9 @@ async fn scrape_indexer(
         HandlerType::SubsPleaseJson => {
             scrape_subsplease(client, indexer, meta, season, episode).await
         }
+        HandlerType::KnabenJson => {
+            scrape_knaben(client, indexer, meta, media_type, season, episode).await
+        }
         HandlerType::Html => {
             scrape_html(
                 client,
@@ -229,6 +234,134 @@ fn build_queries(
         qs.push(meta.title.clone());
         qs
     }
+}
+
+// ─── Knaben JSON API handler ─────────────────────────────────────────────────
+
+async fn scrape_knaben(
+    client: &Client,
+    indexer: &IndexerDef,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> (Vec<ScrapedStream>, bool) {
+    let sim_min = if media_type == "movie" {
+        MOVIE_SIMILARITY_MIN
+    } else {
+        SERIES_SIMILARITY_MIN
+    };
+    let mut results = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut had_http_success = false;
+
+    for query in build_queries(meta, media_type, season, episode) {
+        let response = match client
+            .post(indexer.query_url_templates[0])
+            .json(&serde_json::json!({
+                "search_type": "100%",
+                "search_field": "title",
+                "query": query,
+                "order_by": "seeders",
+                "order_direction": "desc",
+                "size": 50,
+                "hide_unsafe": true,
+                "hide_xxx": true,
+            }))
+            .timeout(Duration::from_secs(20))
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) => {
+                tracing::debug!("knaben HTTP {}", r.status());
+                continue;
+            }
+            Err(e) => {
+                tracing::debug!(
+                    error_kind = crate::util::http::transport_error_kind(&e),
+                    "knaben request failed: {e}"
+                );
+                continue;
+            }
+        };
+        had_http_success = true;
+
+        let json: serde_json::Value = match response.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!("knaben response parse failed: {e}");
+                continue;
+            }
+        };
+        let hits = match json.get("hits").and_then(|v| v.as_array()) {
+            Some(hits) => hits,
+            None => continue,
+        };
+
+        for hit in hits {
+            let title = match hit.get("title").and_then(|v| v.as_str()) {
+                Some(title) if !title.is_empty() => title,
+                _ => continue,
+            };
+            let magnet = match hit.get("magnetUrl").and_then(|v| v.as_str()) {
+                Some(magnet) if magnet.starts_with("magnet:") => magnet,
+                _ => continue,
+            };
+            let info_hash = match parser::extract_info_hash(magnet) {
+                Some(hash) => hash.to_lowercase(),
+                None => continue,
+            };
+            if !seen.insert(info_hash.clone()) {
+                continue;
+            }
+
+            let (name, parsed) = parser::parse_magnet_stream(magnet, title);
+            let ratio =
+                parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&name), &meta.title);
+            if ratio < sim_min {
+                continue;
+            }
+            if media_type == "movie"
+                && let (Some(parsed_year), Some(media_year)) = (parsed.year, meta.year)
+                && parsed_year != media_year
+            {
+                continue;
+            }
+
+            let files = if media_type == "series" {
+                build_series_files(&parsed, season, episode)
+            } else {
+                vec![]
+            };
+            if media_type == "series" && files.is_empty() {
+                continue;
+            }
+
+            results.push(ScrapedStream {
+                info_hash,
+                name,
+                source: indexer.source_name.to_string(),
+                seeders: hit
+                    .get("seeders")
+                    .and_then(|value| value.as_i64())
+                    .and_then(|value| i32::try_from(value).ok()),
+                size: hit.get("bytes").and_then(|value| value.as_i64()),
+                parsed,
+                files,
+                is_cached: false,
+                torrent_type: crate::db::TorrentType::Public,
+                torrent_file: None,
+                announce_list: vec![],
+                uploader: None,
+            });
+            if results.len() >= 50 {
+                return (results, true);
+            }
+        }
+    }
+
+    (results, had_http_success)
 }
 
 // ─── RSS handler (BT4G) ───────────────────────────────────────────────────────

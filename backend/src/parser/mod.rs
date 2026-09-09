@@ -92,7 +92,10 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
     }
 }
 
-/// Extract a 40-char hex info_hash from a string (URL or magnet).
+/// Extract a BitTorrent v1 info hash from a string (URL or magnet).
+///
+/// Magnet URIs may encode the 20-byte hash as either 40 hexadecimal characters
+/// or 32 RFC 4648 base32 characters.
 pub fn extract_info_hash(s: &str) -> Option<String> {
     static INFO_HASH_RE: OnceLock<regex::Regex> = OnceLock::new();
 
@@ -104,10 +107,49 @@ pub fn extract_info_hash(s: &str) -> Option<String> {
         if hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
             return Some(hash);
         }
+
+        let base32: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .take(32)
+            .collect();
+        if base32.len() == 32
+            && let Some(bytes) = decode_base32_info_hash(&base32)
+        {
+            return Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect());
+        }
     }
 
     let re = INFO_HASH_RE.get_or_init(|| regex::Regex::new(r"[a-fA-F0-9]{40}").unwrap());
     re.find(s).map(|m| m.as_str().to_lowercase())
+}
+
+fn decode_base32_info_hash(value: &str) -> Option<[u8; 20]> {
+    let mut output = [0u8; 20];
+    let mut accumulator = 0u32;
+    let mut bits = 0u8;
+    let mut output_index = 0usize;
+
+    for ch in value.bytes() {
+        let digit = match ch {
+            b'A'..=b'Z' => ch - b'A',
+            b'a'..=b'z' => ch - b'a',
+            b'2'..=b'7' => ch - b'2' + 26,
+            _ => return None,
+        };
+        accumulator = (accumulator << 5) | u32::from(digit);
+        bits += 5;
+        while bits >= 8 {
+            bits -= 8;
+            if output_index >= output.len() {
+                return None;
+            }
+            output[output_index] = (accumulator >> bits) as u8;
+            output_index += 1;
+        }
+    }
+
+    (output_index == output.len()).then_some(output)
 }
 
 /// Extract the display name (`dn`) from a magnet URI.
@@ -224,5 +266,13 @@ mod magnet_tests {
         let (name, parsed) = parse_magnet_stream(magnet, "Fallback.2026.720p.WEB-DL");
         assert_eq!(name, "Fallback.2026.720p.WEB-DL");
         assert_eq!(parsed.resolution.as_deref(), Some("720p"));
+    }
+
+    #[test]
+    fn extract_info_hash_decodes_base32_btih() {
+        assert_eq!(
+            extract_info_hash("magnet:?xt=urn:btih:UDW7764OYADXSL7PMQIUHZCMTYJJU5GC"),
+            Some("a0edfffb8ec007792fef641143e44c9e129a74c2".into())
+        );
     }
 }
