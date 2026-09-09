@@ -4,7 +4,7 @@
 
 **The ultimate open-source streaming platform.** Aggregate streams from your configured sources, manage playback via supported providers, and enjoy on Stremio, Kodi, or directly in your browser.
 
-[![Documentation](https://img.shields.io/badge/docs-mhdzumair.github.io%2FMediaFusion-blue)](https://mhdzumair.github.io/MediaFusion/)
+[![Documentation](https://img.shields.io/badge/docs-mhdzumair.github.io%2FMediaFusion-blue)](https://mhdzumair.github.io/MediaFusion/docs/)
 [![GitHub release](https://img.shields.io/github/v/release/mhdzumair/MediaFusion)](https://github.com/mhdzumair/MediaFusion/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-join-blue?logo=telegram)](https://t.me/mediafusion_stremio_addon)
@@ -29,15 +29,15 @@ Open an instance, configure your preferences, and click **Install in Stremio**.
 
 Full documentation including deployment guides, configuration reference, and integration instructions is at:
 
-**[mhdzumair.github.io/MediaFusion](https://mhdzumair.github.io/MediaFusion/)**
+**[mhdzumair.github.io/MediaFusion](https://mhdzumair.github.io/MediaFusion/docs/)**
 
 Key pages:
 
-- [Quick Start](https://mhdzumair.github.io/MediaFusion/getting-started/quick-start/) — 2-minute setup with a community instance
-- [Features](https://mhdzumair.github.io/MediaFusion/features/) — full feature overview
-- [Docker Compose Deployment](https://mhdzumair.github.io/MediaFusion/deployment/docker-compose/) — self-host with Docker
-- [Configuration Reference](https://mhdzumair.github.io/MediaFusion/configuration/) — all environment variables explained
-- [Contributing](https://mhdzumair.github.io/MediaFusion/contributing/) — development setup and contribution guide
+- [Quick Start](https://mhdzumair.github.io/MediaFusion/docs/getting-started/quick-start/) — 2-minute setup with a community instance
+- [Features](https://mhdzumair.github.io/MediaFusion/docs/features/) — full feature overview
+- [Docker Compose Deployment](https://mhdzumair.github.io/MediaFusion/docs/deployment/docker-compose/) — self-host with Docker
+- [Configuration Reference](https://mhdzumair.github.io/MediaFusion/docs/configuration/) — all environment variables explained
+- [Contributing](https://mhdzumair.github.io/MediaFusion/docs/contributing/) — development setup and contribution guide
 
 ---
 
