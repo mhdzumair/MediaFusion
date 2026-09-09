@@ -4,7 +4,10 @@
 /// the selected file via credentialed WebDAV URL.
 use std::time::Duration;
 
-use reqwest::Client;
+use reqwest::{
+    Client,
+    header::{COOKIE, HeaderMap, SET_COOKIE},
+};
 use serde_json::Value;
 
 use crate::providers::{
@@ -97,7 +100,21 @@ fn parse_config(raw: &Value) -> Result<QbConfig, ProviderError> {
     })
 }
 
-async fn qb_login(http: &Client, cfg: &QbConfig) -> Result<(), ProviderError> {
+fn session_cookie(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get_all(SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .find_map(|value| {
+            value
+                .split(';')
+                .next()
+                .filter(|cookie| cookie.starts_with("SID="))
+                .map(str::to_owned)
+        })
+}
+
+async fn qb_login(http: &Client, cfg: &QbConfig) -> Result<String, ProviderError> {
     let url = format!("{}/api/v2/auth/login", cfg.qb_url);
     let resp = http
         .post(&url)
@@ -108,6 +125,7 @@ async fn qb_login(http: &Client, cfg: &QbConfig) -> Result<(), ProviderError> {
         .send()
         .await?;
     let status = resp.status();
+    let cookie = session_cookie(resp.headers());
     let text = resp.text().await.unwrap_or_default();
     if status == reqwest::StatusCode::FORBIDDEN || text.to_lowercase().contains("fail") {
         return Err(ProviderError::api(
@@ -121,16 +139,28 @@ async fn qb_login(http: &Client, cfg: &QbConfig) -> Result<(), ProviderError> {
             "qbittorrent_error.mp4",
         ));
     }
-    Ok(())
+    cookie.ok_or_else(|| {
+        ProviderError::api(
+            "qBittorrent login did not return a session cookie",
+            "qbittorrent_error.mp4",
+        )
+    })
 }
 
 async fn qb_torrent_info(
     http: &Client,
     cfg: &QbConfig,
+    session_cookie: &str,
     info_hash: &str,
 ) -> Result<Option<f64>, ProviderError> {
     let url = format!("{}/api/v2/torrents/info?hashes={info_hash}", cfg.qb_url);
-    let arr: Vec<Value> = http.get(&url).send().await?.json().await?;
+    let arr: Vec<Value> = http
+        .get(&url)
+        .header(COOKIE, session_cookie)
+        .send()
+        .await?
+        .json()
+        .await?;
     Ok(arr
         .first()
         .and_then(|t| t.get("progress").and_then(|v| v.as_f64())))
@@ -139,14 +169,15 @@ async fn qb_torrent_info(
 async fn qb_add_torrent(
     http: &Client,
     cfg: &QbConfig,
+    session_cookie: &str,
     magnet: &str,
     info_hash: &str,
     torrent_name: &str,
     torrent_file: Option<&[u8]>,
     is_private: bool,
 ) -> Result<(), ProviderError> {
-    if is_private {
-        qb_set_preferences(http, cfg, true).await?;
+    if is_private && torrent_file.is_some() {
+        qb_set_preferences(http, cfg, session_cookie, true).await?;
     }
 
     let url = format!("{}/api/v2/torrents/add", cfg.qb_url);
@@ -158,6 +189,7 @@ async fn qb_add_torrent(
                 ProviderError::api(format!("torrent multipart: {e}"), "add_torrent_failed.mp4")
             })?;
         http.post(&url)
+            .header(COOKIE, session_cookie)
             .multipart(
                 reqwest::multipart::Form::new()
                     .part("torrents", part)
@@ -171,6 +203,7 @@ async fn qb_add_torrent(
             .await?
     } else {
         http.post(&url)
+            .header(COOKIE, session_cookie)
             .form(&[
                 ("urls", magnet),
                 ("savepath", info_hash),
@@ -210,6 +243,7 @@ fn is_duplicate_torrent_error(text: &str) -> bool {
 async fn qb_set_preferences(
     http: &Client,
     cfg: &QbConfig,
+    session_cookie: &str,
     disable_dht: bool,
 ) -> Result<(), ProviderError> {
     if !disable_dht {
@@ -219,6 +253,7 @@ async fn qb_set_preferences(
     let json = serde_json::json!({"dht": false, "pex": false, "lsd": false}).to_string();
     let resp = http
         .post(&url)
+        .header(COOKIE, session_cookie)
         .form(&[("json", json.as_str())])
         .send()
         .await?;
@@ -235,20 +270,32 @@ async fn qb_set_preferences(
 async fn qb_add_magnet(
     http: &Client,
     cfg: &QbConfig,
+    session_cookie: &str,
     magnet: &str,
     info_hash: &str,
 ) -> Result<(), ProviderError> {
-    qb_add_torrent(http, cfg, magnet, info_hash, info_hash, None, false).await
+    qb_add_torrent(
+        http,
+        cfg,
+        session_cookie,
+        magnet,
+        info_hash,
+        info_hash,
+        None,
+        false,
+    )
+    .await
 }
 
 async fn wait_for_progress(
     http: &Client,
     cfg: &QbConfig,
+    session_cookie: &str,
     info_hash: &str,
 ) -> Result<(), ProviderError> {
     let threshold = cfg.play_video_after as f64 / 100.0;
     for _ in 0..60 {
-        if let Some(progress) = qb_torrent_info(http, cfg, info_hash).await?
+        if let Some(progress) = qb_torrent_info(http, cfg, session_cookie, info_hash).await?
             && progress >= threshold
         {
             return Ok(());
@@ -354,12 +401,14 @@ pub async fn get_video_url(
     is_private: bool,
 ) -> Result<String, ProviderError> {
     let cfg = parse_config(config)?;
-    qb_login(http, &cfg).await?;
+    let session_cookie = qb_login(http, &cfg).await?;
 
-    if qb_torrent_info(http, &cfg, info_hash).await?.is_none() {
+    let existing_progress = qb_torrent_info(http, &cfg, &session_cookie, info_hash).await?;
+    if existing_progress.is_none() {
         qb_add_torrent(
             http,
             &cfg,
+            &session_cookie,
             magnet_link,
             info_hash,
             torrent_name,
@@ -367,12 +416,8 @@ pub async fn get_video_url(
             is_private,
         )
         .await?;
-    } else if qb_torrent_info(http, &cfg, info_hash)
-        .await?
-        .map(|p| p * 100.0 < cfg.play_video_after as f64)
-        .unwrap_or(true)
-    {
-        wait_for_progress(http, &cfg, info_hash).await?;
+    } else if existing_progress.is_some_and(|p| p * 100.0 < cfg.play_video_after as f64) {
+        wait_for_progress(http, &cfg, &session_cookie, info_hash).await?;
     }
 
     let file_path = match find_file(
@@ -388,8 +433,8 @@ pub async fn get_video_url(
     {
         Ok(p) => p,
         Err(_) => {
-            qb_add_magnet(http, &cfg, magnet_link, info_hash).await?;
-            wait_for_progress(http, &cfg, info_hash).await?;
+            qb_add_magnet(http, &cfg, &session_cookie, magnet_link, info_hash).await?;
+            wait_for_progress(http, &cfg, &session_cookie, info_hash).await?;
             find_file(
                 http,
                 &cfg,
@@ -441,9 +486,15 @@ pub async fn list_downloaded_hashes(http: &Client, config: &Value) -> Vec<String
 
 pub async fn delete_all_torrents(http: &Client, config: &Value) -> Result<(), ProviderError> {
     let cfg = parse_config(config)?;
-    qb_login(http, &cfg).await?;
+    let session_cookie = qb_login(http, &cfg).await?;
     let url = format!("{}/api/v2/torrents/info?filter=completed", cfg.qb_url);
-    let arr: Vec<Value> = http.get(&url).send().await?.json().await?;
+    let arr: Vec<Value> = http
+        .get(&url)
+        .header(COOKIE, &session_cookie)
+        .send()
+        .await?
+        .json()
+        .await?;
     let hashes: Vec<String> = arr
         .iter()
         .filter_map(|t| t.get("hash").and_then(|v| v.as_str()).map(str::to_string))
@@ -453,6 +504,7 @@ pub async fn delete_all_torrents(http: &Client, config: &Value) -> Result<(), Pr
     }
     let del_url = format!("{}/api/v2/torrents/delete", cfg.qb_url);
     http.post(&del_url)
+        .header(COOKIE, &session_cookie)
         .form(&[
             ("hashes", hashes.join("|")),
             ("deleteFiles", "true".to_string()),
@@ -472,12 +524,13 @@ pub async fn update_cache_status(
         Ok(c) => c,
         Err(_) => return std::collections::HashMap::new(),
     };
-    if qb_login(http, &cfg).await.is_err() {
-        return std::collections::HashMap::new();
-    }
+    let session_cookie = match qb_login(http, &cfg).await {
+        Ok(cookie) => cookie,
+        Err(_) => return std::collections::HashMap::new(),
+    };
     let joined = info_hashes.join("|");
     let url = format!("{}/api/v2/torrents/info?hashes={joined}", cfg.qb_url);
-    let arr: Vec<Value> = match http.get(&url).send().await {
+    let arr: Vec<Value> = match http.get(&url).header(COOKIE, session_cookie).send().await {
         Ok(r) => r.json().await.unwrap_or_default(),
         Err(_) => return std::collections::HashMap::new(),
     };
@@ -491,4 +544,26 @@ pub async fn update_cache_status(
         }
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use reqwest::header::{HeaderMap, HeaderValue, SET_COOKIE};
+
+    use super::session_cookie;
+
+    #[test]
+    fn extracts_qbittorrent_sid_cookie() {
+        let mut headers = HeaderMap::new();
+        headers.append(SET_COOKIE, HeaderValue::from_static("theme=dark; Path=/"));
+        headers.append(
+            SET_COOKIE,
+            HeaderValue::from_static("SID=authenticated-session; HttpOnly; Path=/"),
+        );
+
+        assert_eq!(
+            session_cookie(&headers).as_deref(),
+            Some("SID=authenticated-session")
+        );
+    }
 }

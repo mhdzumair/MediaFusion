@@ -443,7 +443,7 @@ pub async fn get_video_url(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-    user_ip: Option<&str>,
+    _user_ip: Option<&str>,
     torrent_file: Option<&[u8]>,
     torrent_name: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
@@ -562,7 +562,7 @@ pub async fn get_video_url(
         )
     })?;
 
-    let mut url = selected
+    let url = selected
         .get("downloadUrl")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
@@ -573,18 +573,9 @@ pub async fn get_video_url(
         })?
         .to_string();
 
-    // Append ip= to CDN URL: if forward is set, get MediaFlow's actual public IP;
-    // otherwise use the user_ip hint passed by the caller.
-    let ip_to_append = if let Some(fwd) = forward {
-        Some(fwd.get_public_ip(http).await?)
-    } else {
-        user_ip.map(str::to_string)
-    };
-    if let Some(ip) = ip_to_append {
-        let sep = if url.contains('?') { '&' } else { '?' };
-        url = format!("{url}{sep}ip={}", urlencoding::encode(&ip));
-    }
-
+    // `downloadUrl` is fetched directly by the player. Appending MediaFlow's
+    // address would pin CDN selection to the proxy, although the media bytes do
+    // not pass through it for normal Stremio playback.
     Ok(url)
 }
 

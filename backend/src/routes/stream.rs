@@ -40,6 +40,7 @@ pub(crate) const TORRENT_CAPABLE: &[&str] = &[
     "pikpak",
     "premiumize",
     "realdebrid",
+    "qbittorrent",
     "seedr",
     "torbox",
     "stremthru",
@@ -3301,5 +3302,15 @@ fn build_playback_url(
         base
     } else {
         format!("{base}/{}", urlencoding::encode(filename))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TORRENT_CAPABLE;
+
+    #[test]
+    fn qbittorrent_is_torrent_capable() {
+        assert!(TORRENT_CAPABLE.contains(&"qbittorrent"));
     }
 }

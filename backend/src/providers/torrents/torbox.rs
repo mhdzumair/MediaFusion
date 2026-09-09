@@ -266,20 +266,11 @@ async fn submit_torrent(
 
 /// Build a TorBox `requestdl` URL with `redirect=true` so the player follows
 /// straight to the CDN without an extra server-side JSON round trip.
-fn request_download_link(
-    token: &str,
-    torrent_id: i64,
-    file_id: i64,
-    user_ip: Option<&str>,
-) -> String {
-    let mut url = format!(
+fn request_download_link(token: &str, torrent_id: i64, file_id: i64) -> String {
+    format!(
         "{BASE_URL}/torrents/requestdl?token={}&torrent_id={torrent_id}&file_id={file_id}&redirect=true",
         urlencoding::encode(token)
-    );
-    if let Some(ip) = user_ip {
-        url.push_str(&format!("&user_ip={}", urlencoding::encode(ip)));
-    }
-    url
+    )
 }
 
 fn extract_files_from_torrent(torrent: &Value) -> Vec<(i64, String, i64)> {
@@ -312,7 +303,6 @@ fn build_download_link_from_torrent(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-    user_ip: Option<&str>,
 ) -> Result<String, ProviderError> {
     let torrent_id = torrent.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
         ProviderError::api("Missing torrent id in TorBox response", "api_error.mp4")
@@ -342,7 +332,7 @@ fn build_download_link_from_torrent(
     );
     let file_id = raw_files[idx].0;
 
-    Ok(request_download_link(token, torrent_id, file_id, user_ip))
+    Ok(request_download_link(token, torrent_id, file_id))
 }
 
 async fn ready_playback_from_mylist(
@@ -354,9 +344,7 @@ async fn ready_playback_from_mylist(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-    user_ip: Option<&str>,
 ) -> Result<String, ProviderError> {
-    let resolved_user_ip = resolve_user_ip(http, user_ip, forward).await?;
     let mylist = get_mylist(http, token, forward).await?;
     if let Some(torrent) = find_torrent_in_list(&mylist, info_hash) {
         let finished = torrent
@@ -369,13 +357,7 @@ async fn ready_playback_from_mylist(
             .unwrap_or(false);
         if finished && present {
             return build_download_link_from_torrent(
-                token,
-                &torrent,
-                filename,
-                file_index,
-                season,
-                episode,
-                resolved_user_ip.as_deref(),
+                token, &torrent, filename, file_index, season, episode,
             );
         }
     }
@@ -383,21 +365,6 @@ async fn ready_playback_from_mylist(
         "Torrent is queued on TorBox but not yet downloaded",
         "torrent_not_downloaded.mp4",
     ))
-}
-
-async fn resolve_user_ip(
-    http: &reqwest::Client,
-    user_ip: Option<&str>,
-    forward: Option<&MediaFlowForward>,
-) -> Result<Option<String>, ProviderError> {
-    match user_ip {
-        Some("{mediaflow_ip}") => match forward {
-            Some(fwd) => fwd.get_public_ip(http).await.map(Some),
-            None => Ok(None),
-        },
-        Some(ip) if !ip.is_empty() => Ok(Some(ip.to_string())),
-        _ => Ok(None),
-    }
 }
 
 // ─── Public entry points ──────────────────────────────────────────────────────
@@ -413,7 +380,6 @@ pub async fn get_video_url(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-    user_ip: Option<&str>,
     torrent_file: Option<&[u8]>,
     torrent_name: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
@@ -441,15 +407,8 @@ pub async fn get_video_url(
             .unwrap_or(false);
 
         if finished && present {
-            let resolved_user_ip = resolve_user_ip(http, user_ip, forward).await?;
             return build_download_link_from_torrent(
-                token,
-                &torrent,
-                filename,
-                file_index,
-                season,
-                episode,
-                resolved_user_ip.as_deref(),
+                token, &torrent, filename, file_index, season, episode,
             );
         }
         return Err(ProviderError::api(
@@ -476,7 +435,7 @@ pub async fn get_video_url(
             Ok(r) => r,
             Err(ProviderError::Api { ref message, .. }) if message.contains("DIFF_ISSUE") => {
                 return ready_playback_from_mylist(
-                    http, token, info_hash, forward, filename, file_index, season, episode, user_ip,
+                    http, token, info_hash, forward, filename, file_index, season, episode,
                 )
                 .await;
             }
@@ -490,7 +449,7 @@ pub async fn get_video_url(
 
     if detail.contains("Found Cached") {
         return ready_playback_from_mylist(
-            http, token, info_hash, forward, filename, file_index, season, episode, user_ip,
+            http, token, info_hash, forward, filename, file_index, season, episode,
         )
         .await;
     }
@@ -649,4 +608,20 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         }
     }
     cached
+}
+
+#[cfg(test)]
+mod tests {
+    use super::request_download_link;
+
+    #[test]
+    fn redirect_download_link_does_not_pin_cdn_to_resolver_ip() {
+        let url = request_download_link("token with spaces", 42, 7);
+
+        assert!(url.contains("token=token%20with%20spaces"));
+        assert!(url.contains("torrent_id=42"));
+        assert!(url.contains("file_id=7"));
+        assert!(url.contains("redirect=true"));
+        assert!(!url.contains("user_ip="));
+    }
 }

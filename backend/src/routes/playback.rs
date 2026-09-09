@@ -514,7 +514,7 @@ async fn resolve_playback_url(
     // Dispatch to provider — realdebrid returns (url, files); others just url.
     //
     // Only providers where forward IS fully wired (api calls routed through MediaFlow)
-    // AND whose API accepts an ip= hint receive "{mediaflow_ip}" as user_ip.
+    // AND whose API resolves the download URL server-side receive "{mediaflow_ip}" as user_ip.
     // MediaFlow substitutes that placeholder with its actual public IP before forwarding.
     //
     // Providers with _forward (ignored) make direct API calls, so passing a placeholder
@@ -611,10 +611,12 @@ async fn resolve_playback_url(
         }
         // Providers below make API calls through forward when wired.
         "premiumize" => call_provider_with_torrent_file!(providers::torrents::premiumize),
-        // debridlink: forward wired for API calls; CDN ip= fetched from /proxy/ip internally
+        // debridlink: forward wired for API calls; its direct download URL stays unchanged.
         "debridlink" => call_provider_with_torrent_file!(providers::torrents::debridlink),
         "torbox" => {
-            // forward wired + user_ip= query param supported — pass placeholder
+            // `requestdl?redirect=true` is opened by the player itself. Do not send
+            // MediaFlow's IP as user_ip: that pins TorBox to a CDN edge near the
+            // proxy even though direct Stremio playback fetches bytes elsewhere.
             use providers::torrents::torbox as p;
             let url = p::get_video_url(
                 http,
@@ -625,7 +627,6 @@ async fn resolve_playback_url(
                 stream_info.file_index,
                 season,
                 episode,
-                ip_hint(true),
                 stream_info.torrent_file.as_deref(),
                 Some(stream_info.name.as_str()),
                 fwd,
