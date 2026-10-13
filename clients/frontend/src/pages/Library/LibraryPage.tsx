@@ -34,7 +34,7 @@ export function LibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: profiles, isLoading: profilesLoading } = useProfiles()
   const { isAdmin, isModerator } = useRole()
-  const hasDebridProfile = profiles?.some((p) => p.streaming_providers?.has_debrid) ?? false
+  const hasStreamingProvider = profiles?.some((p) => p.streaming_providers?.has_streaming_provider) ?? false
 
   // Admins see all restricted content; moderators see keyword-only blocks.
   const isBlockedView = searchParams.get('blocked') === 'true' && isModerator
@@ -176,7 +176,7 @@ export function LibraryPage() {
     )
   }
 
-  if (!hasDebridProfile) {
+  if (!hasStreamingProvider) {
     return (
       <div className="space-y-6 p-6 max-w-screen-xl mx-auto">
         <div className="space-y-2 animate-fade-in">
@@ -192,7 +192,7 @@ export function LibraryPage() {
             <Settings2 className="h-12 w-12 text-muted-foreground/50" />
             <h2 className="text-xl font-semibold">Streaming Provider Required</h2>
             <p className="text-muted-foreground max-w-sm">
-              Configure a profile with at least one streaming provider (debrid service) to access library content.
+              Configure a profile with at least one streaming provider to access library content.
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               <Button asChild>

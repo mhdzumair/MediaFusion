@@ -455,6 +455,46 @@ mod tests {
     }
 
     #[test]
+    fn torrent_recognises_compact_season_episode_spellings() {
+        // Every spelling a season pack uses for the same episode. Asking for
+        // S01E03 must land on that file whichever way it is labelled, and must
+        // never fall through to the first file in the torrent.
+        //
+        // Bare `001` is deliberately absent: that is absolute numbering, where
+        // S02E01 would also mean `013`, so it cannot be resolved from the
+        // requested episode number alone.
+        let mut wrong = Vec::new();
+        for spelling in [
+            "Show.S01E03.mkv",
+            "Show.1x03.mkv",
+            "Show.01x03.mkv",
+            "Show.E03.mkv",
+            "Show.s1e3.mkv",
+            "Show.Season 1 Episode 3.mkv",
+        ] {
+            let files = vec![
+                entry(0, "Show.S01E01.Pilot.mkv", 1_500_000),
+                entry(1, &format!("Pack/{spelling}"), 1_500_000),
+                entry(2, "Show.S01E09.Finale.mkv", 1_500_000),
+            ];
+            match select_torrent_file_index(
+                &files,
+                "Show Season 1",
+                None,
+                Some(1),
+                Some(3),
+                None,
+                None,
+            ) {
+                Ok(1) => {}
+                Ok(other) => wrong.push(format!("{spelling} -> file {other}")),
+                Err(e) => wrong.push(format!("{spelling} -> error {e:?}")),
+            }
+        }
+        assert!(wrong.is_empty(), "wrong selection: {wrong:#?}");
+    }
+
+    #[test]
     fn usenet_matches_air_date_in_filename() {
         let files = vec![
             entry(0, "readme.nfo", 100),

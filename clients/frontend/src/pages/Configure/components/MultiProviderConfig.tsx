@@ -175,6 +175,7 @@ function SingleProviderEditor({
       stl: 1440,
       srl: 1.0,
       pva: 100,
+      dwt: 300,
       cat: 'MediaFusion',
       wur: '',
       wus: '',
@@ -868,6 +869,62 @@ function SingleProviderEditor({
                         </Button>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Play video after download (%)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={provider.qbc?.pva ?? 100}
+                      onChange={(e) =>
+                        updateQBConfig({
+                          pva: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                        })
+                      }
+                      placeholder="100"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Percentage downloaded before playback starts. The default of 100 waits for the torrent to finish;
+                      lower values start earlier and play while the rest is still downloading.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="qb-flpp">Prioritize first and last pieces</Label>
+                      <Switch
+                        id="qb-flpp"
+                        checked={provider.qbc?.flpp !== false}
+                        onCheckedChange={(checked) => updateQBConfig({ flpp: checked })}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Asks qBittorrent to fetch the head and tail of the file first, so playback can start long before
+                      the rest of it arrives. On by default; only worth turning off if you always wait for the whole
+                      file.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Download wait timeout (seconds)</Label>
+                    <Input
+                      type="number"
+                      min={30}
+                      max={86400}
+                      value={provider.qbc?.dwt ?? 300}
+                      onChange={(e) =>
+                        updateQBConfig({
+                          dwt: Math.min(86400, Math.max(30, Number(e.target.value) || 300)),
+                        })
+                      }
+                      placeholder="300"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      How long to wait for the percentage above before giving up. Raise it for large or slow torrents,
+                      since the wait ends in an error rather than a slow start.
+                    </p>
                   </div>
 
                   <div className="space-y-2">

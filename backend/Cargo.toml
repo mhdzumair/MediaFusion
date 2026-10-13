@@ -143,6 +143,8 @@ mime_guess = { version = "2", default-features = false, optional = true }
 # Config from env
 dotenvy = "0.15"
 urlencoding = "2"
+# RFC 3986 userinfo encoding for credentials embedded in WebDAV URLs
+percent-encoding = "2"
 url = "2"
 
 # UUID generation for user registration

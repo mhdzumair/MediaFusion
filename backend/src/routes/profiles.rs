@@ -264,15 +264,28 @@ pub fn mask_config(mut config: serde_json::Value) -> serde_json::Value {
 
 /// Build the streaming_providers summary from a full (unmasked) config.
 fn build_streaming_providers_summary(full_config: &serde_json::Value) -> serde_json::Value {
-    let providers_arr = full_config
+    let mut providers_arr = full_config
         .get("streaming_providers")
         .or_else(|| full_config.get("sps"))
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
 
+    // Profiles predating the plural array hold a single provider under `sp`.
+    // UserData::all_providers falls back to it, so the eligibility flags have to
+    // as well, or a legacy profile is told to configure a provider it has.
+    if providers_arr.is_empty()
+        && let Some(sp) = full_config
+            .get("sp")
+            .or_else(|| full_config.get("streaming_provider"))
+            .filter(|v| v.is_object())
+    {
+        providers_arr.push(sp.clone());
+    }
+
     let mut providers = Vec::new();
     let mut has_debrid = false;
+    let mut has_streaming_provider = false;
     let mut primary_service: Option<String> = None;
 
     for (i, p) in providers_arr.iter().enumerate() {
@@ -305,6 +318,12 @@ fn build_streaming_providers_summary(full_config: &serde_json::Value) -> serde_j
         if enabled && has_credentials {
             has_debrid = true;
         }
+        // qBittorrent authenticates with a URL plus WebDAV credentials and
+        // carries none of the debrid token fields above, so requiring one
+        // hides the library from a perfectly usable torrent provider.
+        if enabled && !service.is_empty() {
+            has_streaming_provider = true;
+        }
         if i == 0 && !service.is_empty() {
             primary_service = Some(service.clone());
         }
@@ -319,6 +338,7 @@ fn build_streaming_providers_summary(full_config: &serde_json::Value) -> serde_j
     serde_json::json!({
         "providers": providers,
         "has_debrid": has_debrid,
+        "has_streaming_provider": has_streaming_provider,
         "primary_service": primary_service,
     })
 }
@@ -1472,4 +1492,38 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::build_streaming_providers_summary;
+
+    #[test]
+    fn a_legacy_single_provider_still_counts_for_the_library() {
+        // Profiles predating the plural array keep one provider under `sp`.
+        // UserData::all_providers falls back to it, and the library gate reads
+        // this flag, so leaving it unset hides the library from those profiles.
+        let summary = build_streaming_providers_summary(&json!({
+            "sp": {"sv": "qbittorrent", "en": true},
+        }));
+
+        assert_eq!(summary["has_streaming_provider"], json!(true));
+        assert_eq!(summary["primary_service"], json!("qbittorrent"));
+        // qBittorrent carries no debrid token, so it must not flip has_debrid.
+        assert_eq!(summary["has_debrid"], json!(false));
+    }
+
+    #[test]
+    fn the_plural_array_wins_when_it_is_present() {
+        let summary = build_streaming_providers_summary(&json!({
+            "sps": [{"sv": "realdebrid", "en": true, "tk": "token"}],
+            "sp": {"sv": "qbittorrent", "en": true},
+        }));
+
+        assert_eq!(summary["primary_service"], json!("realdebrid"));
+        assert_eq!(summary["has_debrid"], json!(true));
+        assert_eq!(summary["has_streaming_provider"], json!(true));
+    }
 }

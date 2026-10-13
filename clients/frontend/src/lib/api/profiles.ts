@@ -12,6 +12,8 @@ export interface StreamingProviderInfo {
 export interface StreamingProvidersSummary {
   providers: StreamingProviderInfo[]
   has_debrid: boolean
+  // True for any enabled provider; has_debrid misses providers without a token.
+  has_streaming_provider: boolean
   primary_service: string | null
 }
 

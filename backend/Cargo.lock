@@ -3522,6 +3522,7 @@ dependencies = [
  "once_cell",
  "openssl",
  "ort",
+ "percent-encoding",
  "prometheus-client",
  "quick-xml",
  "rand 0.10.2",

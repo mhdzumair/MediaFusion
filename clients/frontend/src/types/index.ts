@@ -95,6 +95,7 @@ export interface QBittorrentConfig {
   seeding_time_limit: number
   seeding_ratio_limit: number
   play_video_after: number
+  download_wait_timeout?: number
   category: string
   webdav_url: string
   webdav_username: string
