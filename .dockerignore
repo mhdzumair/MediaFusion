@@ -59,3 +59,7 @@ venv.bak/
 
 # Node
 **/node_modules/
+
+# Rust
+backend/target/
+target/

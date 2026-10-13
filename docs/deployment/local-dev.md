@@ -84,6 +84,35 @@ Database migrations run automatically on first start.
 
 The server starts at **http://127.0.0.1:8000**.
 
+### Alternative: build the image in Docker
+
+If you would rather not install Rust and Node on the host, `deployment/Dockerfile.local` builds everything inside the image. It builds natively, so it behaves the same on arm64, but a release build of the whole dependency tree takes a while there.
+
+From the project root:
+
+```bash
+cd deployment/docker-compose
+cp .env-sample .env
+```
+
+Compose resolves `env_file: .env` relative to the compose file, so the container reads this `.env` and not the one from Step 3. Adjust the copy before starting: the sample ships an empty `SECRET_KEY` and `API_PASSWORD`, so set both, point `HOST_URL` at `http://127.0.0.1:8000`, and add the dev settings from Step 3 (`USE_CONFIG_SOURCE=local`, `DISABLE_ALL_SCHEDULER=true`, `LOGGING_LEVEL=DEBUG`). Then:
+
+```bash
+docker compose -f docker-compose-minimal.yml -f docker-compose-local.yml up -d --build
+docker compose -f docker-compose-minimal.yml -f docker-compose-local.yml logs -f mediafusion-api
+```
+
+Prefix the command with `PROFILE=dev` for a debug build that compiles several times faster, which matters on arm64.
+
+The first build compiles everything and can take various minutes;
+later builds reuse the cargo and pnpm caches.
+
+This takes over the API service from step 2, so stop that one first to free port 8000:
+
+```bash
+docker compose -f docker-compose-minimal.yml stop mediafusion-api
+```
+
 ## Step 5: Run the background worker (optional)
 
 In a separate terminal from the project root:

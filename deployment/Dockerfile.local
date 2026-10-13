@@ -1,0 +1,113 @@
+# syntax=docker/dockerfile:1
+
+# Builds everything from source so the current code can be run without a Rust
+# or Node toolchain on the host. CI does not use this file: it cross compiles
+# with cargo-zigbuild and feeds the binaries to deployment/Dockerfile, which is
+# what the published image is built from.
+#
+# Build from the repository root, the context needs backend/ and clients/:
+#   docker build -f deployment/Dockerfile.local -t mediafusion:local .
+#
+# Builds release binaries by default. A debug build compiles several times
+# faster, which matters a lot on arm64 hardware:
+#   docker build --build-arg PROFILE=dev -f deployment/Dockerfile.local -t mediafusion:local .
+
+# ── Frontend ────────────────────────────────────────────────────────────────
+FROM node:22-bookworm-slim AS frontend
+
+WORKDIR /app
+
+RUN npm install --global pnpm@10
+
+# Manifests on their own, so installing dependencies survives source edits
+COPY clients/frontend/package.json clients/frontend/pnpm-lock.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+COPY clients/frontend/ ./
+RUN pnpm run build
+
+# ── API and worker ──────────────────────────────────────────────────────────
+FROM rust:1-bookworm AS builder
+
+# A C compiler and cmake for the jemalloc and aws-lc native builds
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# The sqlx macros validate against the query cache in backend/.sqlx, so no
+# database has to be reachable while compiling
+ENV SQLX_OFFLINE=true
+
+# release or dev, and an unset BUILD_JOBS lets cargo pick the parallelism
+ARG PROFILE=release
+ARG BUILD_JOBS=
+
+WORKDIR /app/backend
+
+COPY backend/ ./
+
+# The poster and tracker modules include_str!() fonts and json from the
+# repository root, not from backend/. Only the include_str!() targets are
+# copied, the 85 MB NSFW model is not needed to compile.
+COPY resources/fonts/ /app/resources/fonts/
+COPY resources/images/ /app/resources/images/
+COPY resources/json/ /app/resources/json/
+
+# embed-frontend embeds ../clients/frontend/dist relative to the manifest
+# directory, so the SPA has to be in place before compiling
+COPY --from=frontend /app/dist /app/clients/frontend/dist
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/backend/target \
+    set -eux; \
+    case "$PROFILE" in \
+        dev|test) \
+            profile_dir=debug; \
+            frontend_features=embed-frontend,rust-embed/debug-embed; \
+            ;; \
+        *) \
+            profile_dir="$PROFILE"; \
+            frontend_features=embed-frontend; \
+            ;; \
+    esac; \
+    cargo build --profile "$PROFILE" --features "$frontend_features" \
+        ${BUILD_JOBS:+-j $BUILD_JOBS} \
+        --bin mediafusion-api --bin mediafusion-worker; \
+    mkdir -p /out; \
+    cp "target/$profile_dir/mediafusion-api" "target/$profile_dir/mediafusion-worker" /out/
+
+# ── Runtime ─────────────────────────────────────────────────────────────────
+# Same runtime as deployment/Dockerfile, binaries built on bookworm run fine on
+# the newer glibc here.
+FROM debian:trixie-slim AS runtime
+
+WORKDIR /mediafusion
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r mediafusion && \
+    useradd --no-log-init -r -g mediafusion -m -d /home/mediafusion mediafusion
+
+COPY --from=builder --chown=mediafusion:mediafusion /out/mediafusion-api    /usr/local/bin/mediafusion-api
+COPY --from=builder --chown=mediafusion:mediafusion /out/mediafusion-worker /usr/local/bin/mediafusion-worker
+
+COPY --chown=mediafusion:mediafusion . /mediafusion
+
+ARG VERSION
+ENV VERSION=${VERSION}
+
+USER mediafusion
+
+EXPOSE 8000
+
+# Default: run the API server.
+# Override with: command: ["/usr/local/bin/mediafusion-worker"]
+CMD ["/usr/local/bin/mediafusion-api"]
