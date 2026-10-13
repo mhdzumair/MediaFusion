@@ -158,7 +158,7 @@ services:
     command: redis-server --appendonly yes --save 60 1 --maxmemory-policy allkeys-lru
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli --raw INFO | grep -q '^loading:0$'"]
+      test: ["CMD", "redis-cli", "-e", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
