@@ -111,6 +111,13 @@ pub async fn find_or_create_media_strict(
     .await
 }
 
+/// Resolve an existing media row for the given title/year, or create a new
+/// one via external metadata lookup (TMDB → Cinemeta → anime providers).
+///
+/// Matching order: exact title+year → year-aware fuzzy title → external
+/// metadata → stub. Fuzzy matching is constrained to rows with a matching
+/// or unknown year when a year is known, so same-title/different-year
+/// movies don't collapse into one record.
 #[allow(clippy::too_many_arguments)]
 async fn find_or_create_media_inner(
     pool: &PgPool,
@@ -1328,6 +1335,13 @@ pub async fn ensure_add_title_to_poster(pool: &PgPool, media_id: i32) {
     .await;
 }
 
+/// Resolve or create a sports media stub for the given title/year/category.
+///
+/// Matching order: exact title+year → year-aware fuzzy title → create stub.
+/// Fuzzy matching is skipped for racing and team-matchup categories (those
+/// always create a new row) and is constrained to rows with a matching or
+/// unknown year when a year is known, so same-title/different-year events
+/// don't collapse into one record.
 async fn find_or_create_sports_stub_inner(
     pool: &PgPool,
     title: &str,
