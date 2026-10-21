@@ -208,6 +208,8 @@ pub async fn run(
     run_torrent_scrape(state, user_data, meta, media_type, season, episode).await
 }
 
+/// Run a passive live scrape and return only database-persisted torrent hashes.
+/// This prevents clients from receiving a playback URL for an unsaved stream.
 async fn run_torrent_scrape(
     state: &AppState,
     user_data: &UserData,
