@@ -62,7 +62,9 @@ impl StoreStreamResult {
     }
 }
 
-/// Batch store torrent streams (scraper cold-path).
+/// Persist scraper-discovered torrents and return only hashes whose storage succeeded.
+/// Failed writes and failed episode-link repairs are deliberately excluded so
+/// callers cannot advertise an unresolved playback hash.
 pub async fn store_torrent_streams(
     pool: &PgPool,
     streams: &[TorrentStoreInput],
@@ -98,7 +100,8 @@ pub async fn store_torrent_streams(
     stored
 }
 
-/// Idempotent torrent store keyed by `info_hash`.
+/// Insert a torrent by `info_hash` or restore media/episode links for an existing hash.
+/// A returned success requires the requested link to have been written without error.
 pub async fn store_torrent_stream(
     pool: &PgPool,
     stream: &TorrentStoreInput,
