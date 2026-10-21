@@ -246,7 +246,7 @@ async fn run_torrent_scrape(
         .iter()
         .map(crate::db::TorrentStoreInput::from)
         .collect();
-    crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
+    let persisted_hashes = crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
 
     // ── Telegram live scraper ────────────────────────────────────────────────
     if let Some(uid) = user_data.user_id {
@@ -271,6 +271,9 @@ async fn run_torrent_scrape(
     // warm request from paying the full scraping cost.
 
     deduped
+        .into_iter()
+        .filter(|s| persisted_hashes.contains(&s.info_hash))
+        .collect()
 }
 
 /// Run all scrapers unconditionally (for on-demand user-triggered scrapes).
@@ -322,7 +325,7 @@ pub async fn run_forced(
         .iter()
         .map(crate::db::TorrentStoreInput::from)
         .collect();
-    crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
+    let persisted_hashes = crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
     // Forced scrape explicitly invalidates the cache so the caller sees fresh results.
     invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
 
@@ -345,6 +348,9 @@ pub async fn run_forced(
     // Release the lock so a subsequent forced scrape can run immediately.
     let _: Result<(), _> = state.redis.del(&lock_key).await;
     deduped
+        .into_iter()
+        .filter(|s| persisted_hashes.contains(&s.info_hash))
+        .collect()
 }
 
 /// Run usenet scrapers (Easynews + TorBox usenet) for the given media item.
