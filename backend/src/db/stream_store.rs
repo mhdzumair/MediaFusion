@@ -67,17 +67,26 @@ pub async fn store_torrent_streams(
     pool: &PgPool,
     streams: &[TorrentStoreInput],
     opts: &StoreStreamOpts,
-) {
+) -> std::collections::HashSet<String> {
+    // A scraper result must never become a playable URL if the database
+    // rejected its stream record. Return only successfully persisted hashes.
+    let mut stored = std::collections::HashSet::new();
     if streams.is_empty() || opts.media_id.0 <= 0 {
-        return;
+        return stored;
     }
 
     let mut inserted = 0usize;
     let mut skipped = 0usize;
     for stream in streams {
         match store_torrent_stream(pool, stream, opts).await {
-            Ok(r) if r.was_inserted() => inserted += 1,
-            Ok(_) => skipped += 1,
+            Ok(r) if r.was_inserted() => {
+                inserted += 1;
+                stored.insert(stream.info_hash.clone());
+            }
+            Ok(_) => {
+                skipped += 1;
+                stored.insert(stream.info_hash.clone());
+            }
             Err(e) => tracing::warn!("store_torrent_stream: failed {} — {e}", stream.info_hash),
         }
     }
@@ -86,6 +95,7 @@ pub async fn store_torrent_streams(
         "store_torrent_streams: {} inserted, {} already exist for media {}",
         inserted, skipped, opts.media_id.0
     );
+    stored
 }
 
 /// Idempotent torrent store keyed by `info_hash`.
@@ -101,6 +111,9 @@ pub async fn store_torrent_stream(
             .await?;
 
     if let Some((stream_id,)) = existing {
+        // A previously stored hash can now be discovered for a different episode.
+        // Repair the missing media/episode link before advertising it as stored.
+        link_torrent_to_media(pool, StreamId(stream_id), &stream.files, opts).await?;
         if let Some(seeders) = stream.seeders {
             sqlx::query(
                 "UPDATE torrent_stream SET seeders = GREATEST(seeders, $1) WHERE stream_id = $2",
@@ -166,6 +179,8 @@ pub async fn store_torrent_stream(
                 .bind(&stream.info_hash)
                 .fetch_one(pool)
                 .await?;
+        // The ON CONFLICT winner also needs this media/episode link.
+        link_torrent_to_media(pool, StreamId(existing), &stream.files, opts).await?;
         return Ok(StoreStreamResult::AlreadyExists(StreamId(existing)));
     }
     ts_result?;
