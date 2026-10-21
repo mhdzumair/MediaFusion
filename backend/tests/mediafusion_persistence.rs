@@ -230,7 +230,6 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
 
     let first_pool = pool.clone();
     let first_stream = stream.clone();
-    let first_opts = first_opts;
     let first_task = tokio::spawn(async move {
         store_torrent_streams(
             &first_pool,
@@ -241,7 +240,6 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
     });
     let second_pool = pool.clone();
     let second_stream = stream.clone();
-    let second_opts = second_opts;
     let second_task = tokio::spawn(async move {
         store_torrent_streams(
             &second_pool,
