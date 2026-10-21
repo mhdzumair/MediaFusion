@@ -486,7 +486,7 @@ async fn resolve_playback_url(
     user_data: &UserData,
 ) -> Result<String, providers::ProviderError> {
     // Fetch stream info from DB (announce list, file_index, filename hint)
-    let stream_info = db::fetch_stream_playback_info(&state.pool_ro, info_hash, season, episode)
+    let stream_info = db::fetch_stream_playback_info(&state.pool, info_hash, season, episode)
         .await
         .ok_or_else(|| providers::ProviderError::api("Stream not found", "stream_not_found.mp4"))?;
 
