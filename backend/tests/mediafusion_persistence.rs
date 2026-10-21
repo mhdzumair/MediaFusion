@@ -208,15 +208,21 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
 
     let hash = format!("aa{:038x}", media_id);
     let stream = test_stream(hash.clone());
-    let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series)
-        .with_episode(Some(4), Some(8), None);
+    let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series).with_episode(
+        Some(4),
+        Some(8),
+        None,
+    );
 
     let (first, second) = tokio::join!(
         store_torrent_streams(&pool, std::slice::from_ref(&stream), &opts),
         store_torrent_streams(&pool, std::slice::from_ref(&stream), &opts)
     );
     assert!(first.contains(&hash), "first concurrent store must succeed");
-    assert!(second.contains(&hash), "second concurrent store must succeed");
+    assert!(
+        second.contains(&hash),
+        "second concurrent store must succeed"
+    );
 
     let stored_rows: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM torrent_stream WHERE info_hash = $1")
@@ -224,7 +230,10 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
             .fetch_one(&pool)
             .await
             .expect("count torrent rows");
-    assert_eq!(stored_rows, 1, "concurrent insert must store only one torrent");
+    assert_eq!(
+        stored_rows, 1,
+        "concurrent insert must store only one torrent"
+    );
 
     let episode_links: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM file_media_link fml \
