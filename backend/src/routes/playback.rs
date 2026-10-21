@@ -472,6 +472,8 @@ async fn resolve(
     result
 }
 
+/// Resolve a stored torrent through a debrid provider using the primary DB
+/// for the initial hash lookup to avoid read-replica replication lag.
 async fn resolve_playback_url(
     state: &AppState,
     info_hash: &str,
