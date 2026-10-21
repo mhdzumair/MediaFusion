@@ -227,13 +227,23 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
     let first_stream = stream.clone();
     let first_opts = opts.clone();
     let first_task = tokio::spawn(async move {
-        store_torrent_streams(&first_pool, std::slice::from_ref(&first_stream), &first_opts).await
+        store_torrent_streams(
+            &first_pool,
+            std::slice::from_ref(&first_stream),
+            &first_opts,
+        )
+        .await
     });
     let second_pool = pool.clone();
     let second_stream = stream.clone();
     let second_opts = opts.clone();
     let second_task = tokio::spawn(async move {
-        store_torrent_streams(&second_pool, std::slice::from_ref(&second_stream), &second_opts).await
+        store_torrent_streams(
+            &second_pool,
+            std::slice::from_ref(&second_stream),
+            &second_opts,
+        )
+        .await
     });
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
