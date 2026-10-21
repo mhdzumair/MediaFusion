@@ -6,6 +6,7 @@ use mediafusion_api::db::{
 };
 use sqlx::postgres::PgPoolOptions;
 
+/// Build a small synthetic torrent input without external tracker traffic.
 fn test_stream(info_hash: String) -> TorrentStoreInput {
     TorrentStoreInput {
         base: StreamStoreBase {
@@ -23,6 +24,7 @@ fn test_stream(info_hash: String) -> TorrentStoreInput {
     }
 }
 
+/// A failed PostgreSQL write must never be treated as a playable stream.
 #[tokio::test]
 async fn failed_db_insert_never_returns_a_playback_hash() {
     let pool = PgPoolOptions::new()
@@ -39,6 +41,7 @@ async fn failed_db_insert_never_returns_a_playback_hash() {
     pool.close().await;
 }
 
+/// Rediscovered season-pack hashes gain the requested episode link.
 #[tokio::test]
 async fn existing_hash_is_linked_to_a_new_series_episode() {
     let _db_lock = common::lock_db_tests().await;
@@ -118,6 +121,7 @@ async fn existing_hash_is_linked_to_a_new_series_episode() {
         .expect("clean media");
 }
 
+/// First insertion and repeat discovery both preserve playable hash lookup.
 #[tokio::test]
 async fn successful_movie_insert_and_idempotent_retry_are_resolvable() {
     let _db_lock = common::lock_db_tests().await;
@@ -173,6 +177,7 @@ async fn successful_movie_insert_and_idempotent_retry_are_resolvable() {
         .expect("clean media");
 }
 
+/// A missing episode FK fails cleanly and a later valid retry repairs it.
 #[tokio::test]
 async fn failed_episode_link_does_not_advertise_hash_and_retry_repairs_it() {
     let _db_lock = common::lock_db_tests().await;
