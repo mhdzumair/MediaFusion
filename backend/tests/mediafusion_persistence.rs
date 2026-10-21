@@ -208,7 +208,12 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
 
     let hash = format!("aa{:038x}", media_id);
     let stream = test_stream(hash.clone());
-    let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series).with_episode(
+    let first_opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series).with_episode(
+        Some(4),
+        Some(7),
+        None,
+    );
+    let second_opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series).with_episode(
         Some(4),
         Some(8),
         None,
@@ -225,7 +230,7 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
 
     let first_pool = pool.clone();
     let first_stream = stream.clone();
-    let first_opts = opts.clone();
+    let first_opts = first_opts;
     let first_task = tokio::spawn(async move {
         store_torrent_streams(
             &first_pool,
@@ -236,7 +241,7 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
     });
     let second_pool = pool.clone();
     let second_stream = stream.clone();
-    let second_opts = opts.clone();
+    let second_opts = second_opts;
     let second_task = tokio::spawn(async move {
         store_torrent_streams(
             &second_pool,
@@ -291,20 +296,23 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
          JOIN stream_file sf ON sf.id = fml.file_id \
          JOIN torrent_stream ts ON ts.stream_id = sf.stream_id \
          WHERE ts.info_hash = $1 AND fml.media_id = $2 \
-         AND fml.season_number = 4 AND fml.episode_number = 8",
+         AND fml.season_number = 4 AND fml.episode_number IN (7, 8)",
     )
     .bind(&hash)
     .bind(media_id)
     .fetch_one(&pool)
     .await
     .expect("count episode links");
-    assert_eq!(episode_links, 1, "winning torrent must link to S04E08");
-    assert!(
-        fetch_stream_playback_info(&pool, &hash, Some(4), Some(8))
+    assert_eq!(episode_links, 2, "both requested episodes must have links");
+    for episode in [7, 8] {
+        let playback = fetch_stream_playback_info(&pool, &hash, Some(4), Some(episode))
             .await
-            .is_some(),
-        "the winning torrent must resolve for S04E08"
-    );
+            .expect("each requested episode must resolve");
+        assert!(
+            !playback.has_no_files,
+            "both requested episodes must have playback files"
+        );
+    }
 
     sqlx::query(
         "DELETE FROM stream WHERE id = (SELECT stream_id FROM torrent_stream WHERE info_hash = $1)",
