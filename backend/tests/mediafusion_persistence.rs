@@ -177,6 +177,90 @@ async fn successful_movie_insert_and_idempotent_retry_are_resolvable() {
         .expect("clean media");
 }
 
+/// Concurrent same-hash writes must retain the winner's episode links.
+#[tokio::test]
+async fn concurrent_same_hash_stores_preserve_episode_playback() {
+    let _db_lock = common::lock_db_tests().await;
+    // The shared test pool has a single connection; use a separate multi-connection
+    // pool to exercise overlapping SELECT/INSERT/ON CONFLICT statements.
+    let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://mediafusion:mediafusion@127.0.0.1:5432/mediafusion".into()
+    });
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(&url)
+        .await
+        .expect("connect to concurrent test database");
+    mediafusion_api::migrate::run(&pool)
+        .await
+        .expect("migrations");
+
+    let media_id: i32 = sqlx::query_scalar(
+        "INSERT INTO media (type, title, adult, is_blocked, is_public, is_user_created, \
+         total_streams, nudity_status, created_at) \
+         VALUES ($1, 'test_persistence::concurrent_episode', false, false, true, false, 0, 'UNKNOWN', NOW()) \
+         RETURNING id",
+    )
+    .bind(MediaType::Series)
+    .fetch_one(&pool)
+    .await
+    .expect("insert series");
+
+    let hash = format!("aa{:038x}", media_id);
+    let stream = test_stream(hash.clone());
+    let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series)
+        .with_episode(Some(4), Some(8), None);
+
+    let (first, second) = tokio::join!(
+        store_torrent_streams(&pool, std::slice::from_ref(&stream), &opts),
+        store_torrent_streams(&pool, std::slice::from_ref(&stream), &opts)
+    );
+    assert!(first.contains(&hash), "first concurrent store must succeed");
+    assert!(second.contains(&hash), "second concurrent store must succeed");
+
+    let stored_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM torrent_stream WHERE info_hash = $1")
+            .bind(&hash)
+            .fetch_one(&pool)
+            .await
+            .expect("count torrent rows");
+    assert_eq!(stored_rows, 1, "concurrent insert must store only one torrent");
+
+    let episode_links: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM file_media_link fml \
+         JOIN stream_file sf ON sf.id = fml.file_id \
+         JOIN torrent_stream ts ON ts.stream_id = sf.stream_id \
+         WHERE ts.info_hash = $1 AND fml.media_id = $2 \
+         AND fml.season_number = 4 AND fml.episode_number = 8",
+    )
+    .bind(&hash)
+    .bind(media_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count episode links");
+    assert_eq!(episode_links, 1, "winning torrent must link to S04E08");
+    assert!(
+        fetch_stream_playback_info(&pool, &hash, Some(4), Some(8))
+            .await
+            .is_some(),
+        "the winning torrent must resolve for S04E08"
+    );
+
+    sqlx::query(
+        "DELETE FROM stream WHERE id = (SELECT stream_id FROM torrent_stream WHERE info_hash = $1)",
+    )
+    .bind(&hash)
+    .execute(&pool)
+    .await
+    .expect("clean torrent");
+    sqlx::query("DELETE FROM media WHERE id = $1")
+        .bind(media_id)
+        .execute(&pool)
+        .await
+        .expect("clean media");
+    pool.close().await;
+}
+
 /// A missing episode FK fails cleanly and a later valid retry repairs it.
 #[tokio::test]
 async fn failed_episode_link_does_not_advertise_hash_and_retry_repairs_it() {
