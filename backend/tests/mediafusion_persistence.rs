@@ -178,7 +178,7 @@ async fn successful_movie_insert_and_idempotent_retry_are_resolvable() {
 }
 
 /// Concurrent same-hash writes must retain the winner's episode links.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_same_hash_stores_preserve_episode_playback() {
     let _db_lock = common::lock_db_tests().await;
     // The shared test pool has a single connection; use a separate multi-connection
@@ -214,10 +214,51 @@ async fn concurrent_same_hash_stores_preserve_episode_playback() {
         None,
     );
 
-    let (first, second) = tokio::join!(
-        store_torrent_streams(&pool, std::slice::from_ref(&stream), &opts),
-        store_torrent_streams(&pool, std::slice::from_ref(&stream), &opts)
-    );
+    // A SHARE table lock allows the initial SELECT but blocks INSERT's
+    // ROW EXCLUSIVE lock. Wait until *both* writers are blocked at INSERT:
+    // releasing it then necessarily makes one writer take ON CONFLICT.
+    let mut blocker = pool.begin().await.expect("start blocking transaction");
+    sqlx::query("LOCK TABLE torrent_stream IN SHARE MODE")
+        .execute(&mut *blocker)
+        .await
+        .expect("block concurrent inserts");
+
+    let first_pool = pool.clone();
+    let first_stream = stream.clone();
+    let first_opts = opts.clone();
+    let first_task = tokio::spawn(async move {
+        store_torrent_streams(&first_pool, std::slice::from_ref(&first_stream), &first_opts).await
+    });
+    let second_pool = pool.clone();
+    let second_stream = stream.clone();
+    let second_opts = opts.clone();
+    let second_task = tokio::spawn(async move {
+        store_torrent_streams(&second_pool, std::slice::from_ref(&second_stream), &second_opts).await
+    });
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let waiters: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pg_stat_activity \
+             WHERE datname = current_database() AND wait_event_type = 'Lock' \
+             AND query LIKE '%INSERT INTO torrent_stream%'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("observe blocked inserts");
+        if waiters >= 2 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "both writers must reach the torrent INSERT before releasing the lock"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    blocker.commit().await.expect("release insert lock");
+
+    let first = first_task.await.expect("first concurrent task");
+    let second = second_task.await.expect("second concurrent task");
     assert!(first.contains(&hash), "first concurrent store must succeed");
     assert!(
         second.contains(&hash),
