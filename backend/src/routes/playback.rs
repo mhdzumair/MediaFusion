@@ -202,6 +202,22 @@ async fn dispatch(
     playback_redirect(method, video_url)
 }
 
+fn provider_resolve_budget(
+    provider: &crate::models::user_data::StreamingProvider,
+) -> playback_dedup::ResolveBudget {
+    playback_dedup::ResolveBudget {
+        holder: if provider.service == "qbittorrent" {
+            provider
+                .qbittorrent_config
+                .as_ref()
+                .map(providers::torrents::qbittorrent::resolve_timeout)
+                .unwrap_or_else(playback_dedup::holder_resolve_timeout)
+        } else {
+            playback_dedup::holder_resolve_timeout()
+        },
+    }
+}
+
 async fn resolve(
     state: Arc<AppState>,
     secret_str: &str,
@@ -318,6 +334,8 @@ async fn resolve(
         ));
     }
 
+    let budget = provider_resolve_budget(provider);
+
     // 4. Check Redis cache, then deduplicate concurrent resolution.
     let cache_key = playback_cache_key(
         secret_str,
@@ -333,7 +351,7 @@ async fn resolve(
         return Ok(cached);
     }
 
-    match playback_dedup::prepare_resolve(&state.redis, &cache_key).await {
+    match playback_dedup::prepare_resolve_with_budget(&state.redis, &cache_key, budget).await {
         playback_dedup::DedupWaitResult::Cached(url) => {
             if playback_metadata_needs_refresh(&state.pool_ro, info_hash, season, episode).await {
                 tracing::info!(
@@ -372,9 +390,10 @@ async fn resolve(
         playback_dedup::DedupWaitResult::ReadyToResolve => {}
     }
 
-    let lock_guard = playback_dedup::acquire_resolve_lock(&state.redis, &cache_key)
-        .await
-        .ok_or_else(playback_dedup::playback_resolve_timed_out)?;
+    let lock_guard =
+        playback_dedup::acquire_resolve_lock_with_budget(&state.redis, &cache_key, budget)
+            .await
+            .ok_or_else(playback_dedup::playback_resolve_timed_out)?;
 
     if let Some(cached) =
         try_cached_playback_url(&state, &cache_key, info_hash, season, episode).await
@@ -391,7 +410,7 @@ async fn resolve(
     );
 
     let result = match tokio::time::timeout(
-        playback_dedup::holder_resolve_timeout(),
+        budget.holder,
         resolve_playback_url(
             &state,
             info_hash,
@@ -1088,6 +1107,27 @@ pub(crate) fn playback_redirect(method: Method, url: String) -> Response {
 #[cfg(test)]
 mod tests {
     use super::playback_cache_key;
+
+    #[tokio::test(start_paused = true)]
+    async fn qbittorrent_route_budget_allows_downloads_past_ninety_seconds() {
+        use serde_json::json;
+        use std::time::Duration;
+        let provider =
+            serde_json::from_value(json!({"sv":"qbittorrent","qbc":{"dwt":1800}})).unwrap();
+        let budget = super::provider_resolve_budget(&provider);
+        assert!(budget.holder >= Duration::from_secs(1800));
+        assert!(budget.client_wait() > budget.holder);
+        assert!(
+            tokio::time::timeout(budget.holder, tokio::time::sleep(Duration::from_secs(1800)))
+                .await
+                .is_ok()
+        );
+        let debrid = serde_json::from_value(json!({"sv":"realdebrid"})).unwrap();
+        assert_eq!(
+            super::provider_resolve_budget(&debrid).holder,
+            Duration::from_secs(90)
+        );
+    }
 
     #[test]
     fn playback_cache_key_varies_by_provider() {

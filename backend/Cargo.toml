@@ -187,7 +187,7 @@ tikv-jemallocator = { version = "0.7", optional = true }
 wiremock = "0.6"
 insta = { version = "1", features = ["json"] }
 criterion = { version = "0.8", features = ["async_tokio"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "test-util"] }
 
 [[bench]]
 name = "stream_warm"

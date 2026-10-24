@@ -89,6 +89,12 @@ existing profiles are backfilled into encrypted storage and their Redis profile
 caches are invalidated. Keep the same `SECRET_KEY` when upgrading; the backfill
 stops on unreadable encrypted secrets rather than overwriting them.
 
+Playback uses the configured download wait for qBittorrent, including waits longer
+than the general HTTP request timeout. The resolver and concurrent requests allow
+for metadata lookup and a retry as well. If you run MediaFusion behind a reverse
+proxy, its response timeout and the player's timeout must also allow the wait.
+Both qBittorrent 4.x paused torrents and 5.x stopped torrents resume automatically.
+
 !!! tip "Playing before the download finishes"
     Playback starts as soon as the threshold is reached, and the player reads the file over WebDAV while qBittorrent keeps writing to it. Two things make this usable: MediaFusion asks qBittorrent to download **only the file you picked**, so a season pack does not queue the whole run, and it enables **prioritize first and last pieces**, so the head of the file arrives before the middle.
 

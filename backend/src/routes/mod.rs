@@ -56,7 +56,7 @@ use axum::{
 use tower_http::services::ServeFile;
 use tower_http::{
     catch_panic::CatchPanicLayer, compression::CompressionLayer, cors::CorsLayer,
-    services::ServeDir, timeout::TimeoutLayer,
+    services::ServeDir,
 };
 
 #[cfg(feature = "embed-frontend")]
@@ -127,6 +127,29 @@ async fn spa_cache_headers(response: Response) -> Response {
         );
     }
     response
+}
+
+// Playback has its own provider-specific resolution and deduplication budgets.
+// Applying REQUEST_TIMEOUT here would silently truncate long qBittorrent waits.
+async fn api_request_timeout(
+    axum::extract::State(timeout): axum::extract::State<std::time::Duration>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let playback = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .is_some_and(|path| {
+            path.as_str()
+                .starts_with("/streaming_provider/{secret_str}/playback/")
+        });
+    if playback {
+        return next.run(request).await;
+    }
+    match tokio::time::timeout(timeout, next.run(request)).await {
+        Ok(response) => response,
+        Err(_) => StatusCode::GATEWAY_TIMEOUT.into_response(),
+    }
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -875,9 +898,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         ))
         .layer(axum::middleware::from_fn(api_error_middleware))
         .layer(CompressionLayer::new())
-        .layer(TimeoutLayer::with_status_code(
-            axum::http::StatusCode::GATEWAY_TIMEOUT,
+        .layer(axum::middleware::from_fn_with_state(
             stream_timeout,
+            api_request_timeout,
         ))
         .layer(make_trace_layer!())
         .layer(CorsLayer::permissive())
@@ -916,6 +939,51 @@ pub fn router(state: Arc<AppState>) -> Router {
 #[cfg(test)]
 mod route_tests {
     use axum::{Router, routing::delete, routing::get};
+
+    #[tokio::test(start_paused = true)]
+    async fn generic_http_timeout_does_not_truncate_provider_playback() {
+        use axum::{
+            body::Body,
+            http::{Request, StatusCode},
+        };
+        use std::time::Duration;
+        use tower::ServiceExt;
+        async fn slow_handler() -> &'static str {
+            tokio::time::sleep(Duration::from_secs(300)).await;
+            "ready"
+        }
+        let router = Router::new()
+            .route("/normal", get(slow_handler))
+            .route(
+                "/streaming_provider/{secret_str}/playback/{provider_name}/{info_hash}",
+                get(slow_handler),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                Duration::from_secs(120),
+                super::api_request_timeout,
+            ));
+        let normal = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/normal")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(normal.status(), StatusCode::GATEWAY_TIMEOUT);
+        let playback = router
+            .oneshot(
+                Request::builder()
+                    .uri("/streaming_provider/U-test/playback/custom-name/abc")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(playback.status(), StatusCode::OK);
+    }
 
     #[test]
     fn admin_cache_key_routes_do_not_conflict() {

@@ -22,6 +22,23 @@ use crate::providers::{
 /// Keeps the previous 60 x 5s behaviour for profiles that never set one.
 const DEFAULT_DOWNLOAD_WAIT_TIMEOUT_SECS: i64 = 300;
 
+const MAX_DOWNLOAD_WAIT_TIMEOUT_SECS: i64 = 86400;
+
+fn download_wait_timeout_secs(raw: &Value) -> u64 {
+    raw.get("download_wait_timeout")
+        .or_else(|| raw.get("dwt"))
+        .and_then(Value::as_i64)
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_DOWNLOAD_WAIT_TIMEOUT_SECS)
+        .min(MAX_DOWNLOAD_WAIT_TIMEOUT_SECS) as u64
+}
+
+/// Allow both file-search attempts their configured download wait, plus time for
+/// login, metadata, selection, and WebDAV checks. Individual HTTP calls stay bounded.
+pub fn resolve_timeout(config: &Value) -> Duration {
+    Duration::from_secs(download_wait_timeout_secs(config) * 2 + 120)
+}
+
 const METADATA_WAIT_SECS: u64 = 20;
 
 #[derive(Debug, Clone)]
@@ -84,12 +101,7 @@ fn parse_config(raw: &Value) -> Result<QbConfig, ProviderError> {
         .and_then(|v| v.as_i64())
         .unwrap_or(100)
         .clamp(0, 100) as i32;
-    let download_wait_timeout_secs = raw
-        .get("download_wait_timeout")
-        .or_else(|| raw.get("dwt"))
-        .and_then(|v| v.as_i64())
-        .filter(|v| *v > 0)
-        .unwrap_or(DEFAULT_DOWNLOAD_WAIT_TIMEOUT_SECS) as u64;
+    let download_wait_timeout_secs = download_wait_timeout_secs(raw);
     let first_last_piece_prio = raw
         .get("first_last_piece_prio")
         .or_else(|| raw.get("flpp"))
@@ -610,7 +622,9 @@ async fn qb_ensure_running(
     status: &QbTorrent,
 ) -> Result<(), ProviderError> {
     let endpoint = match status.state.as_str() {
-        "stopped" | "paused" | "pausedDL" | "pausedUP" => "/api/v2/torrents/start",
+        // The state names identify the API generation: 4.x pauses, 5.x stops.
+        "paused" | "pausedDL" | "pausedUP" => "/api/v2/torrents/resume",
+        "stopped" | "stoppedDL" | "stoppedUP" => "/api/v2/torrents/start",
         "missingFiles" | "error" => "/api/v2/torrents/recheck",
         _ => return Ok(()),
     };
@@ -1143,6 +1157,53 @@ mod tests {
         parse_config, qb_files_from_json, qb_torrent_from_json, select_torrent_file_index,
         session_cookie, torrent_file_href,
     };
+
+    #[tokio::test]
+    async fn resume_uses_the_endpoint_for_each_api_generations_states() {
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{body_string, header, method, path},
+        };
+        for (state, endpoint) in [
+            ("pausedDL", "/api/v2/torrents/resume"),
+            ("pausedUP", "/api/v2/torrents/resume"),
+            ("stoppedDL", "/api/v2/torrents/start"),
+            ("stoppedUP", "/api/v2/torrents/start"),
+            ("missingFiles", "/api/v2/torrents/recheck"),
+            ("error", "/api/v2/torrents/recheck"),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path(endpoint))
+                .and(header("Cookie", "SID=test"))
+                .and(body_string("hashes=abc123"))
+                .respond_with(ResponseTemplate::new(200))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let cfg = parse_config(&json!({"qur":server.uri(), "wur":"http://dav"})).unwrap();
+            let status = qb_torrent_from_json(&json!({"state":state})).unwrap();
+            super::qb_ensure_running(&reqwest::Client::new(), &cfg, "SID=test", "abc123", &status)
+                .await
+                .unwrap();
+            server.verify().await;
+        }
+    }
+
+    #[test]
+    fn resolution_budget_covers_both_download_waits_and_clamps_extreme_input() {
+        for key in ["dwt", "download_wait_timeout"] {
+            assert_eq!(super::resolve_timeout(&json!({key:1800})).as_secs(), 3720);
+            let cfg = parse_config(&json!({"qur":"http://qb", "wur":"http://dav", key:i64::MAX}))
+                .unwrap();
+            assert_eq!(cfg.download_wait_timeout_secs, 86400);
+            assert_eq!(
+                super::resolve_timeout(&json!({key:i64::MAX})).as_secs(),
+                172920
+            );
+        }
+        assert_eq!(super::resolve_timeout(&json!({})).as_secs(), 720);
+    }
 
     #[test]
     fn selection_namespace_isolated_by_server_and_account() {
