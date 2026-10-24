@@ -224,17 +224,8 @@ async fn validate_one(
                 Some(t) => t,
                 None => return ValidationResult::error("EasyDebrid token is missing"),
             };
-            match http
-                .get("https://easydebrid.com/api/v1/user")
-                .bearer_auth(token)
-                .send()
-                .await
-            {
-                Ok(r) if r.status().is_success() => ValidationResult::success(),
-                Ok(r) => ValidationResult::error(format!(
-                    "Failed to validate EasyDebrid credentials (HTTP {})",
-                    r.status()
-                )),
+            match super::torrents::easydebrid::validate_credentials(http, token).await {
+                Ok(()) => ValidationResult::success(),
                 Err(e) => ValidationResult::error(format!(
                     "Failed to validate EasyDebrid credentials: {e}"
                 )),

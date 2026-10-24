@@ -272,8 +272,10 @@ async fn fetch_mdblist_catalog(
         url.push_str(&format!("&filter_genre={genre}"));
     }
 
-    let resp = match retry::with_transport_retry("mdblist catalog", || state.http.get(&url).send())
-        .await
+    let resp = match retry::with_transport_retry("mdblist catalog", || {
+        crate::util::browser_headers::apply_json_request(state.http.get(&url)).send()
+    })
+    .await
     {
         Ok(r) if r.status().is_success() => r,
         Ok(r) if r.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {

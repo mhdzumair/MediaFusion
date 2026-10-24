@@ -63,8 +63,7 @@ pub async fn fetch_all_list_imdb_ids(
             url.push_str(&format!("&filter_genre={g}"));
         }
 
-        let resp = match http
-            .get(&url)
+        let resp = match crate::util::browser_headers::apply_json_request(http.get(&url))
             .timeout(std::time::Duration::from_secs(30))
             .send()
             .await
@@ -153,8 +152,7 @@ pub async fn ingest_list(
         let url = format!(
             "{MDBLIST_BASE}/lists/{list_id}/items?apikey={api_key}&limit={limit}&offset={offset}"
         );
-        let resp = http
-            .get(&url)
+        let resp = crate::util::browser_headers::apply_json_request(http.get(&url))
             .timeout(std::time::Duration::from_secs(30))
             .send()
             .await

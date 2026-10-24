@@ -87,7 +87,7 @@ pub fn build(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
 pub fn build_debrid(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
     let ka = Duration::from_secs(keepalive_secs);
     let mut builder = reqwest::Client::builder()
-        .default_headers(browser_headers::default_client_headers())
+        .default_headers(browser_headers::api_client_headers())
         .http1_only()
         .timeout(Duration::from_secs(90))
         .connect_timeout(Duration::from_secs(15))
