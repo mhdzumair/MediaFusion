@@ -281,6 +281,11 @@ impl StreamingProvider {
         }
         self.service.clone()
     }
+
+    /// Whether this provider authenticates with the API token in `token`.
+    pub fn uses_api_token(&self) -> bool {
+        !matches!(self.service.as_str(), "qbittorrent")
+    }
 }
 
 // ─── Catalog configuration ────────────────────────────────────────────────────
@@ -882,6 +887,28 @@ impl UserData {
                 }
             }
             combined
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn provider(service: &str) -> StreamingProvider {
+        serde_json::from_value(json!({ "n": "test", "sv": service })).unwrap()
+    }
+
+    #[test]
+    fn qbittorrent_has_no_api_token() {
+        assert!(!provider("qbittorrent").uses_api_token());
+    }
+
+    #[test]
+    fn token_providers_use_api_tokens() {
+        for service in ["realdebrid", "torbox", "seedr", "pikpak", "debrider"] {
+            assert!(provider(service).uses_api_token(), "{service}");
         }
     }
 }
