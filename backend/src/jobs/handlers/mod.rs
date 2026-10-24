@@ -16,6 +16,7 @@ pub mod rss_feed;
 pub mod spiders;
 pub mod telegram_backup_ops;
 pub mod telegram_bg;
+pub mod telegram_catalog_cleanup;
 pub mod update_seeders;
 pub mod update_tv_posters;
 pub mod validate_tv;

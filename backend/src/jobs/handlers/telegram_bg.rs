@@ -573,10 +573,20 @@ async fn scrape_and_persist_channel(
         let is_series = season.is_some() || episode.is_some();
         let media_type = if is_series { "series" } else { "movie" };
 
+        let rejection = crate::parser::telegram_title::unresolved_rejection_reason(
+            &stream.file_name,
+            &stream.parsed,
+        );
+        if let Some(reason) = rejection {
+            tracing::debug!(filename = %stream.file_name, reason,
+                "telegram_bg: requiring provider metadata for upload");
+        }
+
         let meta_result = media_resolve::search_meta_for_telegram_feed(
             &ctx.state.pool,
             &ctx.state.http,
             title,
+            rejection.is_none(),
             stream.parsed.year,
             is_series,
             stream.caption_imdb_id.as_deref(),

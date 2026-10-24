@@ -72,7 +72,7 @@ pub async fn find_or_create_media_with_anime(
         cinemeta_fallback_enabled,
         anime_source_order,
         metadata_primary_source,
-        false,
+        MatchPolicy::AllowStub,
     )
     .await
 }
@@ -106,9 +106,17 @@ pub async fn find_or_create_media_strict(
         cinemeta_fallback_enabled,
         anime_source_order,
         metadata_primary_source,
-        true,
+        MatchPolicy::SkipStub,
     )
     .await
+}
+
+#[derive(Clone, Copy)]
+enum MatchPolicy {
+    AllowStub,
+    SkipStub,
+    // Untrusted Telegram titles may only reuse provider-linked DB matches.
+    VerifiedOnly,
 }
 
 /// Resolve an existing media row for the given title/year, or create a new
@@ -130,7 +138,7 @@ async fn find_or_create_media_inner(
     cinemeta_fallback_enabled: bool,
     anime_source_order: &[String],
     metadata_primary_source: &str,
-    strict: bool,
+    policy: MatchPolicy,
 ) -> Option<MediaEntry> {
     let media_type = if is_series {
         MediaType::Series
@@ -138,17 +146,22 @@ async fn find_or_create_media_inner(
         MediaType::Movie
     };
 
+    let verified_only = matches!(policy, MatchPolicy::VerifiedOnly);
+
     // 1. Exact title match (case-insensitive) with ±1 year tolerance.
     let row: Option<(i32, String, Option<i32>)> = if let Some(y) = year {
         sqlx::query_as(
             "SELECT id, title, year FROM media \
              WHERE LOWER(title) = LOWER($1) AND type = $2 \
-             AND (year = $3 OR year = $4 OR year IS NULL) LIMIT 1",
+             AND (year = $3 OR year = $4 OR year IS NULL) \
+             AND (NOT $5 OR (NOT is_blocked AND EXISTS \
+                 (SELECT 1 FROM media_external_id WHERE media_id = media.id))) LIMIT 1",
         )
         .bind(title)
         .bind(media_type)
         .bind(y)
         .bind(y - 1)
+        .bind(verified_only)
         .fetch_optional(pool)
         .await
         .ok()
@@ -156,10 +169,13 @@ async fn find_or_create_media_inner(
     } else {
         sqlx::query_as(
             "SELECT id, title, year FROM media \
-             WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
+             WHERE LOWER(title) = LOWER($1) AND type = $2 \
+             AND (NOT $3 OR (NOT is_blocked AND EXISTS \
+                 (SELECT 1 FROM media_external_id WHERE media_id = media.id))) LIMIT 1",
         )
         .bind(title)
         .bind(media_type)
+        .bind(verified_only)
         .fetch_optional(pool)
         .await
         .ok()
@@ -185,11 +201,14 @@ async fn find_or_create_media_inner(
         sqlx::query_as(
             "SELECT id, title, year FROM media \
              WHERE type = $1 AND title % $2 AND (year = $3 OR year IS NULL) \
+             AND (NOT $4 OR (NOT is_blocked AND EXISTS \
+                 (SELECT 1 FROM media_external_id WHERE media_id = media.id))) \
              ORDER BY similarity(title, $2) DESC LIMIT 1",
         )
         .bind(media_type)
         .bind(title)
         .bind(y)
+        .bind(verified_only)
         .fetch_optional(pool)
         .await
         .ok()
@@ -198,10 +217,13 @@ async fn find_or_create_media_inner(
         sqlx::query_as(
             "SELECT id, title, year FROM media \
              WHERE type = $1 AND title % $2 \
+             AND (NOT $3 OR (NOT is_blocked AND EXISTS \
+                 (SELECT 1 FROM media_external_id WHERE media_id = media.id))) \
              ORDER BY similarity(title, $2) DESC LIMIT 1",
         )
         .bind(media_type)
         .bind(title)
+        .bind(verified_only)
         .fetch_optional(pool)
         .await
         .ok()
@@ -210,7 +232,8 @@ async fn find_or_create_media_inner(
 
     if let Some((id, t, y)) = fuzzy {
         let sim = crate::parser::similarity_ratio(title, &t);
-        if sim >= 70
+        let min_similarity = if verified_only { 90 } else { 70 };
+        if sim >= min_similarity
             && (!is_series || crate::parser::series_identity::series_editions_match(title, &t))
         {
             debug!("media_resolve: fuzzy match {id} (sim={sim}) for '{title}' → '{t}'");
@@ -329,7 +352,7 @@ async fn find_or_create_media_inner(
     }
 
     // 4. No external match — in strict mode, skip rather than creating junk.
-    if strict {
+    if !matches!(policy, MatchPolicy::AllowStub) {
         debug!("media_resolve: strict mode — no confident match for '{title}', skipping");
         return None;
     }
@@ -1145,6 +1168,7 @@ pub async fn search_meta_for_telegram_feed(
     pool: &PgPool,
     http: &reqwest::Client,
     title: &str,
+    allow_unresolved: bool,
     year: Option<i32>,
     is_series: bool,
     caption_imdb_id: Option<&str>,
@@ -1154,65 +1178,81 @@ pub async fn search_meta_for_telegram_feed(
     anime_source_order: &[String],
     metadata_primary_source: &str,
 ) -> Option<crate::scrapers::SearchMeta> {
-    let media_type = if is_series { "series" } else { "movie" };
-
+    // A caption ID is a lookup hint, not proof: never manufacture an external
+    // ID or overwrite the provider title with an untrusted upload filename.
     if let Some(imdb) = caption_imdb_id.filter(|s| !s.is_empty()) {
-        let overrides = ImportMediaOverrides {
-            title: Some(title),
-            poster: None,
-            background: None,
-            release_date: None,
-            year,
-        };
-        if let Some(media_id) = ensure_media_for_import(
-            pool,
+        let existing: Option<(i32, String, Option<i32>)> = sqlx::query_as(
+            "SELECT m.id, m.title, m.year FROM media m \
+             JOIN media_external_id mei ON mei.media_id = m.id \
+             WHERE mei.provider = 'imdb' AND mei.external_id = $1 \
+             AND m.type = $2 AND NOT m.is_blocked LIMIT 1",
+        )
+        .bind(imdb)
+        .bind(if is_series {
+            MediaType::Series
+        } else {
+            MediaType::Movie
+        })
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        if let Some((id, title, year)) = existing {
+            return Some(crate::scrapers::SearchMeta {
+                media_id: crate::db::MediaId(id),
+                imdb_id: Some(imdb.to_string()),
+                title,
+                year,
+            });
+        }
+        if let Some(meta) = crate::scrapers::metadata::fetch_normalized(
             http,
+            &import_fetch_ctx(tmdb_api_key, tvdb_api_key),
+            "imdb",
             imdb,
-            media_type,
-            tmdb_api_key,
-            tvdb_api_key,
-            overrides,
-            None,
-            false,
+            is_series,
         )
         .await
         {
-            let row: Option<(String, Option<i32>, Option<String>)> = sqlx::query_as(
-                "SELECT m.title, m.year, mei.external_id \
-                 FROM media m \
-                 LEFT JOIN media_external_id mei \
-                   ON mei.media_id = m.id AND mei.provider = 'imdb' \
-                 WHERE m.id = $1",
-            )
-            .bind(media_id)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-            if let Some((resolved_title, resolved_year, imdb_ext)) = row {
-                return Some(crate::scrapers::SearchMeta {
-                    media_id: crate::db::MediaId(media_id),
-                    imdb_id: imdb_ext.or_else(|| Some(imdb.to_string())),
-                    title: resolved_title,
-                    year: resolved_year,
-                });
+            if meta.adult {
+                return None;
             }
+            let id = crate::db::store_media(pool, &meta, crate::db::StoreMediaOpts::default())
+                .await
+                .ok()?;
+            return Some(crate::scrapers::SearchMeta {
+                media_id: id,
+                imdb_id: Some(imdb.to_string()),
+                title: meta.title,
+                year: meta.year,
+            });
         }
     }
 
-    search_meta_for_title_with_anime(
+    let media = find_or_create_media_inner(
         pool,
         http,
         title,
         year,
         is_series,
+        &[],
         tmdb_api_key,
         cinemeta_fallback_enabled,
         anime_source_order,
         metadata_primary_source,
+        if allow_unresolved {
+            MatchPolicy::AllowStub
+        } else {
+            MatchPolicy::VerifiedOnly
+        },
     )
-    .await
+    .await?;
+    Some(crate::scrapers::SearchMeta {
+        media_id: crate::db::MediaId(media.id),
+        imdb_id: None,
+        title: media.title,
+        year: media.year,
+    })
 }
 
 /// Resolve media for a feed/spider scraped torrent before persistence (skip when unresolved).

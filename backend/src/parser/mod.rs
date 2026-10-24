@@ -4,6 +4,7 @@ pub mod filter;
 pub mod series_identity;
 pub mod sort;
 pub mod sports_parser;
+pub mod telegram_title;
 
 pub use constants::{
     LANGUAGES_FILTERS, QUALITY_GROUPS, RESOLUTIONS, default_hdr_filter_vec,

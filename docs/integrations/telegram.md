@@ -244,6 +244,53 @@ Full defaults and types: [Environment Variable Reference](../reference/env-refer
 
 ---
 
+## Catalog title quality
+
+Background and on-demand channel scrapes validate filenames before allowing
+unresolved movie/series entries into the catalog. Plausible titles with a release
+year, season/episode marker, resolution, source quality, or codec can still be
+stored when metadata providers have no match. Short, numeric, and non-Latin
+titles are supported; there is no English dictionary requirement.
+
+Upload/scene identifiers (`bgvid`, `vid` numbers, `JD stream`, etc.), long numeric
+identifiers, hash filenames, generic upload names (`video_12345`), and bare names
+without release details require a provider match. Existing unverified catalog
+stubs do not satisfy that requirement. A valid caption IMDb lookup can rescue an
+opaque filename; failed caption lookups never create fake provider-linked stubs,
+and the provider's canonical title is retained.
+
+This is a conservative heuristic, not a guarantee that every plausible title is
+a real film. An unresolved genuine file with only a bare title needs release
+details in its filename or an IMDb ID in its caption to be indexed. Keyword and
+provider adult-content filters continue to apply.
+
+### Review existing Telegram catalog entries
+
+The opt-in cleanup job examines only unverified Telegram-only media without
+external IDs. It preserves manually created/reviewed entries and any title that
+has at least one credible release. It defaults to a dry run and logs candidate
+media IDs, titles, and reasons:
+
+```bash
+mediafusion-worker --run-job telegram_catalog_cleanup --args '{}'
+```
+
+After reviewing the report, hide the candidates with:
+
+```bash
+mediafusion-worker --run-job telegram_catalog_cleanup --args '{"dry_run":false}'
+```
+
+This sets the existing media block flag with a `Telegram catalog quality:` reason;
+it does not delete media, files, or streams. Entries can be restored using the
+admin blocked-content controls. Catalog/metadata caches are invalidated after
+each changed batch. The job checks eligibility again before applying changes,
+so newly enriched or reviewed entries are protected. Optional `batch_size`
+(default 500, maximum 5000) and `after_id` support resumable scans. It is not
+scheduled automatically; deploy the new scraper first, then review the dry run.
+
+---
+
 ## Troubleshooting
 
 ### Bot cannot be added to backup channel
