@@ -1451,6 +1451,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Using MediaFusion as a Torznab indexer in Radarr/Sonarr">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#correcting-regional-series-mismatches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Correcting regional series mismatches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -1871,6 +1888,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Using MediaFusion as a Torznab indexer in Radarr/Sonarr">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#correcting-regional-series-mismatches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Correcting regional series mismatches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2025,6 +2059,19 @@
 <h2 id="using-mediafusion-as-a-torznab-indexer-in-radarrsonarr">Using MediaFusion as a Torznab indexer in Radarr/Sonarr<a class="headerlink" href="#using-mediafusion-as-a-torznab-indexer-in-radarrsonarr" title="Permanent link">¶</a></h2>
 <p>MediaFusion exposes a native <a href="https://github.com/mhdzumair/MediaFusion/blob/main/resources/yaml/mediafusion.yaml">Torznab API</a> that Radarr, Sonarr, and Prowlarr can use as an indexer.</p>
 <p>Add <code>https://your-mediafusion-instance/torznab</code> as a custom Torznab indexer in Prowlarr (or directly in Radarr/Sonarr).</p>
+<h3 id="correcting-regional-series-mismatches">Correcting regional series mismatches<a class="headerlink" href="#correcting-regional-series-mismatches" title="Permanent link">¶</a></h3>
+<p>Regional Bigg Boss editions are separate series: <a href="https://www.imdb.com/title/tt7084920/">Bigg Boss Tamil</a>
+uses <code>tt7084920</code>, while <a href="https://www.imdb.com/title/tt7805494/">Bigg Boss Telugu</a> uses <code>tt7805494</code>.
+MediaFusion preserves an edition such as <code>(Tamil)</code> or <code>(Telugu)</code> in release titles when matching
+metadata. TMDB results whose title is just “Bigg Boss” are qualified using their original language.</p>
+<p>If an existing torrent has already been assigned to the wrong show, open its content detail page
+in MediaFusion and use the stream linking dialog. Choose <strong>Replace Link</strong>, select the correct
+series (or search by its IMDb ID), and provide the season/episode mapping when needed. Submit the
+correction; it is applied immediately if auto-approved, otherwise a moderator must approve it.
+Replacing a link removes the wrong association; adding another link leaves both associations.</p>
+<p>The IMDb attribute in MediaFusion's Torznab feed comes from those stored media links. Restarting
+or reinstalling the addon does not repair existing links. If another indexer's feed supplies the
+wrong IMDb attribute, that feed also needs correction at its source.</p>
 
 
 
