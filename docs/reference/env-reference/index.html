@@ -2495,6 +2495,11 @@
 <td>JSON array of content types to disable globally: <code>magnet</code>, <code>torrent</code>, <code>nzb</code>, <code>iptv</code>, <code>youtube</code>, <code>http</code>, <code>acestream</code>, <code>telegram</code>.</td>
 </tr>
 <tr>
+<td><code>HIDE_TORRENT_INFO_HASHES</code></td>
+<td><code>false</code></td>
+<td>Hide torrent hashes, magnets and torrent-file data in non-admin JSON responses, including Stremio. Playback uses authenticated encrypted references. P2P-only streams and non-admin Torznab access are unavailable in this mode. Restart the API after changing this flag; purge any existing reverse-proxy response caches.</td>
+</tr>
+<tr>
 <td><code>DISABLED_PROVIDERS</code></td>
 <td><code>[]</code></td>
 <td>JSON array of provider names to remove from the Configure UI: <code>p2p</code>, <code>realdebrid</code>, <code>seedr</code>, <code>debridlink</code>, <code>alldebrid</code>, <code>offcloud</code>, <code>pikpak</code>, <code>torbox</code>, <code>premiumize</code>, <code>qbittorrent</code>, <code>stremthru</code>, <code>easydebrid</code>, <code>debrider</code>.</td>
