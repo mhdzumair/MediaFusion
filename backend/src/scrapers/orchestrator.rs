@@ -35,6 +35,11 @@ fn validate_stream_core(
         SERIES_SIMILARITY_MIN
     };
     let parsed_title = parsed.title.as_deref().unwrap_or(raw_name);
+    if media_type == "series"
+        && !parser::series_identity::series_editions_match(parsed_title, &meta.title)
+    {
+        return false;
+    }
     if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
         return false;
     }
@@ -85,6 +90,11 @@ fn validate_telegram_stream(
         SERIES_SIMILARITY_MIN
     };
     let parsed_title = stream.parsed.title.as_deref().unwrap_or(&stream.name);
+    if media_type == "series"
+        && !parser::series_identity::series_editions_match(parsed_title, &meta.title)
+    {
+        return false;
+    }
     if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
         return false;
     }

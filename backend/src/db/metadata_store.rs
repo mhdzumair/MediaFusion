@@ -163,6 +163,8 @@ pub async fn find_existing_media(
     };
 
     if let Some((id, existing_title)) = fuzzy
+        && (media_type != MediaType::Series
+            || crate::parser::series_identity::series_editions_match(title, &existing_title))
         && crate::parser::similarity_ratio(title, &existing_title) >= 70
     {
         return Some(MediaId(id));

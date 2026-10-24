@@ -8,10 +8,21 @@ async fn regional_editions_keep_distinct_media_and_torznab_imdb_ids() {
     let pool = common::test_pool().await;
     mediafusion_api::migrate::run(pool).await.unwrap();
     let mut stored = Vec::new();
-    for (edition, imdb_id) in [("Tamil", "tt7084920"), ("Telugu", "tt7805494")] {
-        let name = format!(
-            "www.1TamilMV.lease - BIGG BOSS ({edition}) S10 EP21 DAY 20 TRUE WEB-DL - 720p - AVC - AAC - 350MB.mkv"
-        );
+    for (show, imdb_id) in [
+        ("Bigg Boss (Tamil)", "tt7084920"),
+        ("Bigg Boss (Telugu)", "tt7805494"),
+        ("Big Brother (US)", "tt990000001"),
+        ("Big Brother (UK)", "tt990000002"),
+        (
+            "A Shared Long Reality Competition Series Title (US)",
+            "tt990000003",
+        ),
+        (
+            "A Shared Long Reality Competition Series Title (UK)",
+            "tt990000004",
+        ),
+    ] {
+        let name = format!("{show} S10 EP21 DAY 20 TRUE WEB-DL - 720p - AVC - AAC - 350MB.mkv");
         let parsed = parser::parse_title(&name);
         let media_id = db::store_media(
             pool,
@@ -55,9 +66,14 @@ async fn regional_editions_keep_distinct_media_and_torznab_imdb_ids() {
         .stream_id();
         stored.push((media_id, stream_id, hash, imdb_id));
     }
-    assert_ne!(
-        stored[0].0, stored[1].0,
-        "regional editions must not be merged"
+    let media_ids = stored
+        .iter()
+        .map(|(id, _, _, _)| *id)
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        media_ids.len(),
+        stored.len(),
+        "regional editions must not be merged, even when fuzzy title scores are high"
     );
     for (_, _, hash, imdb_id) in &stored {
         let rows =

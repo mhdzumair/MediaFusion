@@ -74,6 +74,14 @@ uses `tt7084920`, while [Bigg Boss Telugu](https://www.imdb.com/title/tt7805494/
 MediaFusion preserves an edition such as `(Tamil)` or `(Telugu)` in release titles when matching
 metadata. TMDB results whose title is just “Bigg Boss” are qualified using their original language.
 
+Country editions are also preserved across series, including Big Brother, Celebrity Big Brother,
+The Office, Survivor, and MasterChef. Country names and codes are treated as aliases, such as
+`UK`/`GB`, `US`/`USA`, and `Australia`/`AU`. Conflicting editions are excluded from both live results
+and fuzzy media matching. A country explicitly requested in a search can be added to an otherwise
+unqualified TMDB title when its single origin country agrees. A shared language such as English
+does not establish which country edition it is; ambiguous results without country evidence are skipped.
+Audio-language tags on other shows, such as `Loki (Tamil)`, remain audio metadata.
+
 If an existing torrent has already been assigned to the wrong show, open its content detail page
 in MediaFusion and use the stream linking dialog. Choose **Replace Link**, select the correct
 series (or search by its IMDb ID), and provide the season/episode mapping when needed. Submit the

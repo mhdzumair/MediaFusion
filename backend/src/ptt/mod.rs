@@ -113,7 +113,7 @@ static LANG_TABLE: &[(&str, &str)] = &[
     ("la", "Latino"),
 ];
 
-fn translate_lang(code: &str) -> Option<&'static str> {
+pub(crate) fn translate_lang(code: &str) -> Option<&'static str> {
     LANG_TABLE.iter().find(|(k, _)| *k == code).map(|(_, v)| *v)
 }
 
@@ -217,7 +217,11 @@ fn global_parser() -> &'static Parser {
 pub fn parse(raw: &str, translate_languages: bool) -> ParsedTitle {
     let map = global_parser().parse_raw(raw);
     let mut out = from_map(map, translate_languages);
-    out.title = crate::parser::series_identity::restore_series_edition(raw, &out.title);
+    out.title = crate::parser::series_identity::restore_series_edition_with_languages(
+        raw,
+        &out.title,
+        &out.languages,
+    );
     // Populate episode_title when a season/episode marker is present.
     if !out.seasons.is_empty() && !out.episodes.is_empty() {
         out.episode_title = extract_episode_title(raw, &out.title);
@@ -479,6 +483,45 @@ mod tests {
             let parsed = parse(&raw, true);
             assert_eq!(parsed.title, format!("Bigg Boss {edition}"));
             assert_eq!(parsed.seasons, vec![10]);
+        }
+    }
+
+    #[test]
+    fn country_qualified_series_survive_release_parsing() {
+        for raw in [
+            "Big.Brother.US.S01E01.1080p.WEB-DL",
+            "Big.Brother.(UK).S01E01.1080p",
+            "The.Office.(UK).S01E01.720p",
+            "MasterChef.Australia.S01E01.1080p",
+        ] {
+            let parsed = parse(raw, true);
+            let expected = if raw.starts_with("Big.Brother.US") {
+                "Big Brother US"
+            } else if raw.starts_with("Big.Brother") {
+                "Big Brother UK"
+            } else if raw.starts_with("The.Office") {
+                "The Office UK"
+            } else {
+                "MasterChef AU"
+            };
+            assert!(
+                crate::parser::series_identity::series_editions_match(&parsed.title, expected),
+                "{raw} -> {}",
+                parsed.title
+            );
+        }
+    }
+
+    #[test]
+    fn an_audio_language_code_is_not_restored_as_a_country_edition() {
+        for translate in [false, true] {
+            let parsed = parse("Loki.FR.S01E01.1080p.WEB-DL", translate);
+            assert_eq!(parsed.title, "Loki");
+            assert!(parsed.languages.contains(&if translate {
+                "French".to_string()
+            } else {
+                "fr".to_string()
+            }));
         }
     }
 

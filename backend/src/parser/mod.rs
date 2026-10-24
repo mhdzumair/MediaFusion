@@ -224,8 +224,10 @@ fn normalise(s: &str) -> Vec<String> {
 }
 
 fn jaccard(a: &str, b: &str) -> u32 {
-    let ta: std::collections::HashSet<String> = normalise(a).into_iter().collect();
-    let tb: std::collections::HashSet<String> = normalise(b).into_iter().collect();
+    let a = series_identity::comparison_title(a);
+    let b = series_identity::comparison_title(b);
+    let ta: std::collections::HashSet<String> = normalise(&a).into_iter().collect();
+    let tb: std::collections::HashSet<String> = normalise(&b).into_iter().collect();
 
     if ta.is_empty() && tb.is_empty() {
         return 100;

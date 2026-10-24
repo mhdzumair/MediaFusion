@@ -564,9 +564,15 @@ pub async fn search(
             .unwrap_or("")
             .to_string();
         let title_str = if is_series {
-            crate::parser::series_identity::qualify_series_title(
+            let countries = item["origin_country"]
+                .as_array()
+                .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+                .unwrap_or_default();
+            crate::parser::series_identity::qualify_series_search_title(
+                title,
                 &title_str,
                 item["original_language"].as_str(),
+                &countries,
             )
         } else {
             title_str

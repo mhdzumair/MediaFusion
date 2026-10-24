@@ -210,7 +210,9 @@ async fn find_or_create_media_inner(
 
     if let Some((id, t, y)) = fuzzy {
         let sim = crate::parser::similarity_ratio(title, &t);
-        if sim >= 70 {
+        if sim >= 70
+            && (!is_series || crate::parser::series_identity::series_editions_match(title, &t))
+        {
             debug!("media_resolve: fuzzy match {id} (sim={sim}) for '{title}' → '{t}'");
             link_to_catalogs(pool, id, catalog_ids).await;
             return Some(MediaEntry {
@@ -279,6 +281,13 @@ async fn find_or_create_media_inner(
             external_ids: vec![(match_meta.provider.clone(), match_meta.external_id.clone())],
             ..Default::default()
         });
+
+        if is_series {
+            normalized.title = crate::parser::series_identity::restore_series_edition(
+                &match_meta.title,
+                &normalized.title,
+            );
+        }
 
         if normalized.adult {
             debug!(
@@ -791,6 +800,11 @@ pub fn is_valid_dmm_metadata_match(
     candidate_end_year: Option<i32>,
     episode_number: Option<i32>,
 ) -> bool {
+    if media_type == "series"
+        && !crate::parser::series_identity::series_editions_match(parsed_title, candidate_title)
+    {
+        return false;
+    }
     let min_similarity = dmm_dynamic_min_similarity(parsed_title);
     let similarity = crate::parser::max_similarity_ratio(parsed_title, candidate_title, &[]);
     if similarity < min_similarity {

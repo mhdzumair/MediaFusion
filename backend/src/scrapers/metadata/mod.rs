@@ -447,6 +447,12 @@ pub(super) async fn search_import_db_matches(
     let mut eligible = Vec::new();
 
     for candidate in candidates {
+        if media_type == "series"
+            && !crate::parser::series_identity::series_editions_match(title, &candidate.title)
+        {
+            continue;
+        }
+
         if eligible.len() >= limit {
             break;
         }
