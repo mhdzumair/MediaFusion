@@ -27,6 +27,12 @@ To password-protect WebDAV access:
 
 ## Step 2: Run the Docker image
 
+Build the image from the repository so that you run the current qBittorrent release:
+
+```bash
+docker build -t qbittorrent-webdav:latest deployment/qbittorrent-webdav
+```
+
 ```bash
 docker run -d \
   --name=qbittorrent-webdav \
@@ -35,7 +41,7 @@ docker run -d \
   -p 6881:6881/tcp \
   -p 6881:6881/udp \
   -v /path/to/downloads:/downloads \
-  mhdzumair/qbittorrent-webdav:latest
+  qbittorrent-webdav:latest
 ```
 
 With WebDAV password protection:
@@ -48,7 +54,7 @@ docker run -d \
   -p 6881:6881/udp \
   -v /path/to/.htpasswd:/etc/apache2/.htpasswd \
   -v /path/to/downloads:/downloads \
-  mhdzumair/qbittorrent-webdav:latest
+  qbittorrent-webdav:latest
 ```
 
 ## Step 3: Get the initial qBittorrent password

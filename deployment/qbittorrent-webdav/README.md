@@ -25,6 +25,12 @@ Once generated, copy the Apache MD5 hash and create a `.htpasswd` file manually 
 
 ## Running the Docker Image
 
+From the repository root, build the image to get the current qBittorrent release:
+
+```bash
+docker build -t qbittorrent-webdav:latest deployment/qbittorrent-webdav
+```
+
 Launch qBittorrent-WebDAV using:
 
 ```bash
@@ -36,10 +42,12 @@ docker run -d \
   -p 6881:6881/udp \
   -v /path/to/htpasswd:/etc/apache2/.htpasswd \ # Optional: For WebDAV password protection
   -v /path/to/downloads:/downloads \
-  mhdzumair/qbittorrent-webdav:latest
+  qbittorrent-webdav:latest
 ```
 
 Adjust `/path/to/htpasswd` to the path where you'll store the `.htpasswd` file if you want to set up password for WebDav, and `/path/to/downloads` to your desired downloads directory.
+
+The published `mhdzumair/qbittorrent-webdav:latest` image can be used in place of the locally built one, but it only contains new qBittorrent releases once it has been rebuilt and pushed.
 
 ## Initial qBittorrent and WebDAV Setup
 

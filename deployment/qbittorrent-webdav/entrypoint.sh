@@ -1,41 +1,52 @@
 #!/bin/sh
 
-# qBittorrent setup from base image
-qbtConfigFile="$PROFILE_PATH/qBittorrent/config/qBittorrent.conf"
+set -e
 
-# Ensure the configuration and download directories exist
-mkdir -p "$PROFILE_PATH/qBittorrent/config"
+profilePath="${PROFILE_PATH:-/config}"
+downloadsPath="${DOWNLOADS_PATH:-/downloads}"
+htpasswdPath="/etc/apache2/.htpasswd"
+webdavConf="/etc/apache2/conf.d/010-webdav.conf"
 
-# Adjust file ownership and permissions
-chown -R qbtUser:qbtUser $PROFILE_PATH $DOWNLOADS_PATH /var/log/apache2 /var/run/apache2
+mkdir -p "$profilePath" "$downloadsPath"
 
-# Custom logic to handle qBittorrent configuration setup
-if [ ! -f "$qbtConfigFile" ]; then
-    echo "Creating qBittorrent configuration file at $qbtConfigFile"
-    cat << EOF > "$qbtConfigFile"
-[BitTorrent]
-Session\DefaultSavePath=$DOWNLOADS_PATH
-Session\Port=6881
-Session\TempPath=$DOWNLOADS_PATH/temp
+# httpd refuses to start with "httpd (pid N) already running" when a pid file
+# survived a kill, drop the leftovers before handing over to supervisord
+rm -f /run/apache2/httpd.pid /run/supervisord.pid
 
-[LegalNotice]
-Accepted=true
+# downloads are populated by the host user, only fix the top level directory
+# like the upstream entrypoint does
+chown qbtUser:qbtUser "$downloadsPath"
+chown -R qbtUser:qbtUser "$profilePath" /var/log/apache2 /run/apache2
+
+# write the WebDAV access rules from scratch on every start, editing the vhost
+# in place would stack up duplicate directives on each restart
+rm -f "$authConf"
+if [ -f "$htpasswdPath" ]; then
+    echo "Basic auth password file found. Configuring WebDAV with basic auth."
+    cat > "$webdavConf" <<EOF
+Alias /webdav $downloadsPath
+<Directory $downloadsPath>
+    DAV On
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride All
+    AuthType Basic
+    AuthName "WebDAV"
+    AuthUserFile $htpasswdPath
+    Require valid-user
+</Directory>
+EOF
+else
+    echo "No basic auth password file found. Configuring WebDAV without basic auth."
+    cat > "$webdavConf" <<EOF
+Alias /webdav $downloadsPath
+<Directory $downloadsPath>
+    DAV On
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride All
+    Require all granted
+</Directory>
 EOF
 fi
 
-# Path to the .htpasswd file
-HTPASSWD_PATH="/etc/apache2/.htpasswd"
-
-# Check if .htpasswd file exists and configure basic auth for WebDAV accordingly
-if [ -f "$HTPASSWD_PATH" ]; then
-    echo "Basic auth password file found. Configuring WebDAV with basic auth."
-    sed -i '/<Directory \/downloads>/,/<\/Directory>/{/AuthType/d;/AuthName/d;/AuthUserFile/d;/Require/d}' /etc/apache2/conf.d/000-default.conf
-    sed -i '/<Directory \/downloads>/a \\tAuthType Basic\n\tAuthName "WebDAV"\n\tAuthUserFile '"$HTPASSWD_PATH"'\n\tRequire valid-user' /etc/apache2/conf.d/000-default.conf
-else
-    echo "No basic auth password file found. Configuring WebDAV without basic auth."
-    sed -i '/<Directory \/downloads>/,/<\/Directory>/{/AuthType/d;/AuthName/d;/AuthUserFile/d;/Require/d}' /etc/apache2/conf.d/000-default.conf
-    sed -i '/<Directory \/downloads>/a \\tRequire all granted' /etc/apache2/conf.d/000-default.conf
-fi
-
-# start supervisord
-/usr/bin/supervisord -c /etc/supervisord.conf
+# qBittorrent itself is started by the upstream entrypoint, see supervisord.conf
+exec /usr/bin/supervisord -c /etc/supervisord.conf
