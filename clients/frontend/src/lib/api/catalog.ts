@@ -1,3 +1,4 @@
+import { streamResourcePath, prepareStreamResponse } from '../streamResource'
 import { apiClient } from './client'
 
 // Types
@@ -240,6 +241,7 @@ export interface StreamListResponse {
   /** Episode resolved from stream_id deep link (series only) */
   resolved_episode?: number
   // Web playback requires MediaFlow - this indicates if it's available
+  web_playback?: { proxy_url?: string; api_password?: string }
   web_playback_enabled?: boolean // Whether web browser playback is enabled (requires MediaFlow)
   // Multi-provider support
   streaming_providers?: StreamingProviderInfo[] // All configured providers in selected profile
@@ -326,20 +328,19 @@ export const catalogApi = {
     provider?: string,
     profileUuid?: string,
     streamId?: string,
+    resourceId?: string,
   ): Promise<StreamListResponse> => {
     const searchParams = new URLSearchParams()
 
-    if (season !== undefined) searchParams.set('season', season.toString())
-    if (episode !== undefined) searchParams.set('episode', episode.toString())
     if (profileId !== undefined) searchParams.set('profile_id', profileId.toString())
     if (profileUuid) searchParams.set('profile_uuid', profileUuid)
     if (provider !== undefined) searchParams.set('provider', provider)
     if (streamId) searchParams.set('stream_id', streamId)
 
     const queryString = searchParams.toString()
-    const url = `/catalog/${catalogType}/${mediaId}/streams${queryString ? `?${queryString}` : ''}`
+    const url = `${streamResourcePath(catalogType, resourceId || `mf:${mediaId}`, season, episode)}${queryString ? `?${queryString}` : ''}`
 
-    return apiClient.get<StreamListResponse>(url)
+    return prepareStreamResponse(await apiClient.get<StreamListResponse>(url))
   },
 
   // Get files for a specific stream (for file annotation)

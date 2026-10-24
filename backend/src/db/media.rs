@@ -138,7 +138,9 @@ pub async fn resolve_media_ids(
     };
 
     // mf{internal_id} — direct media.id lookup, no external ID join needed.
-    if let Some(raw) = video_id.strip_prefix("mf")
+    if let Some(raw) = video_id
+        .strip_prefix("mf:")
+        .or_else(|| video_id.strip_prefix("mf"))
         && let Ok(id) = raw.parse::<i32>()
     {
         let exists: Option<(MediaId,)> = sqlx::query_as(
@@ -164,6 +166,8 @@ pub async fn resolve_media_ids(
         ("tvdb", id)
     } else if let Some(id) = video_id.strip_prefix("mal:") {
         ("mal", id)
+    } else if let Some(id) = video_id.strip_prefix("kitsu:") {
+        ("kitsu", id)
     } else {
         // Unknown prefix — fall back to imdb lookup with the raw value.
         ("imdb", video_id)

@@ -74,3 +74,36 @@ Secure the `/metrics` endpoint with a bearer token on public instances.
 
 !!! danger "Never enable the profiler in production"
     The profiler endpoint exposes internal timing data and can cause performance degradation.
+
+## Hide torrent identifiers on public instances
+
+Set `HIDE_TORRENT_INFO_HASHES=true` to remove info hashes, magnets, and torrent-file
+payloads from non-admin JSON responses, including Stremio, catalog streams, stream
+links, suggestions, personal streams, watch history, and import analysis. Hashes in
+filenames, descriptions, and behavior hints are redacted too. Authenticated admins
+retain access for administration; moderator responses are still protected.
+
+Playback links use confidential, authenticated references bound to the profile and
+provider. The server restores the hash and original file selection internally.
+References remain valid until `SECRET_KEY` changes. If a provider's final download
+URL contains a hash, MediaFusion relays that video (including byte ranges) instead
+of exposing the URL in a redirect. This edge case uses the instance's bandwidth.
+P2P-only playback and non-admin Torznab access are unavailable in this mode.
+
+The web UI requests streams using a proxy-readable resource path:
+
+```text
+/api/v1/stream/movie/tt0063350.json?profile_id=2&profile_uuid=...&provider=realdebrid
+/api/v1/stream/series/tt0944947:1:2.json?profile_id=2&profile_uuid=...&provider=realdebrid
+```
+
+`tmdb:`, `tvdb:`, `mal:`, `kitsu:` and `mf:` IDs are supported as well. The old
+catalog stream route remains available, with the same privacy protection and
+provider restrictions. Responses contain a top-level `streams` array. The `url`
+field is the canonical playback link; the browser derives any MediaFlow wrapper
+from that field after a reverse proxy has rewritten it. A proxy can return rows
+containing only `name`, `description`, and `url`; these remain visible and playable
+regardless of saved quality filters.
+
+The flag defaults to `false`. Restart the API after changing it and purge existing
+reverse-proxy caches when enabling it, so old hash-bearing responses are not served.

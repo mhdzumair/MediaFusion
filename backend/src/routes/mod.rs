@@ -504,6 +504,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/catalog/search", get(content::catalog_browse::search_catalog))
         .route("/api/v1/catalog/{catalog_type}", get(content::catalog_browse::browse_catalog))
         .route("/api/v1/catalog/{catalog_type}/{media_id}", get(content::catalog_browse::get_media_detail))
+        .route("/api/v1/stream/{catalog_type}/{video_id}", get(content::catalog_browse::get_resource_streams))
         .route("/api/v1/catalog/{catalog_type}/{media_id}/streams", get(content::catalog_browse::get_media_streams))
         .route("/api/v1/catalog/{catalog_type}/{media_id}/streams/{stream_id}/report", post(content::catalog_browse::report_stream))
         // ── Content stream management ─────────────────────────────────────────
@@ -897,6 +898,11 @@ pub fn router(state: Arc<AppState>) -> Router {
             metrics_middleware,
         ))
         .layer(axum::middleware::from_fn(api_error_middleware))
+        // Sanitize handler, auth, and panic JSON alike, before compression.
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&state),
+            crate::torrent_privacy_middleware::torrent_privacy_middleware,
+        ))
         .layer(CompressionLayer::new())
         .layer(axum::middleware::from_fn_with_state(
             stream_timeout,

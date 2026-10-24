@@ -9,7 +9,8 @@ export interface WatchlistItem {
   year?: number
   poster?: string
   external_ids: ExternalIds
-  info_hashes: string[] // Info hashes from debrid for this media
+  info_hashes: string[] // Hashes or opaque operation references (privacy mode)
+  torrent_refs?: string[]
 }
 
 export interface WatchlistProviderInfo {
@@ -55,6 +56,7 @@ export interface MissingExternalIds {
 }
 
 export interface MissingTorrentItem {
+  torrent_ref?: string
   info_hash: string
   name: string
   size: number
@@ -92,6 +94,7 @@ export interface ImportRequest {
 
 export interface ImportResultItem {
   info_hash: string
+  torrent_ref?: string
   status: 'success' | 'failed' | 'skipped'
   message?: string
   media_id?: number
@@ -181,7 +184,11 @@ export const watchlistApi = {
     if (params.pageSize) searchParams.append('page_size', params.pageSize.toString())
 
     const query = searchParams.toString()
-    return apiClient.get<WatchlistResponse>(`/watchlist/${provider}${query ? `?${query}` : ''}`)
+    const response = await apiClient.get<WatchlistResponse>(`/watchlist/${provider}${query ? `?${query}` : ''}`)
+    return {
+      ...response,
+      items: response.items.map((item) => ({ ...item, info_hashes: item.info_hashes || item.torrent_refs || [] })),
+    }
   },
 
   /**
@@ -191,7 +198,13 @@ export const watchlistApi = {
     const params = new URLSearchParams()
     if (profileId) params.append('profile_id', profileId.toString())
     const query = params.toString()
-    return apiClient.get<MissingTorrentsResponse>(`/watchlist/${provider}/missing${query ? `?${query}` : ''}`)
+    const response = await apiClient.get<MissingTorrentsResponse>(
+      `/watchlist/${provider}/missing${query ? `?${query}` : ''}`,
+    )
+    return {
+      ...response,
+      items: response.items.map((item) => ({ ...item, info_hash: item.info_hash || item.torrent_ref || '' })),
+    }
   },
 
   /**
@@ -208,12 +221,19 @@ export const watchlistApi = {
     const params = new URLSearchParams()
     if (profileId) params.append('profile_id', profileId.toString())
     const query = params.toString()
-    return apiClient.post<ImportResponse>(`/watchlist/${provider}/import${query ? `?${query}` : ''}`, {
+    const response = await apiClient.post<ImportResponse>(`/watchlist/${provider}/import${query ? `?${query}` : ''}`, {
       info_hashes: infoHashes,
       overrides: overrides && Object.keys(overrides).length > 0 ? overrides : undefined,
       is_anonymous: isAnonymous,
       anonymous_display_name: anonymousDisplayName || undefined,
     })
+    return {
+      ...response,
+      details: response.details.map((detail, index) => ({
+        ...detail,
+        info_hash: detail.info_hash || infoHashes[index] || detail.torrent_ref || '',
+      })),
+    }
   },
 
   /**
@@ -252,11 +272,21 @@ export const watchlistApi = {
     const params = new URLSearchParams()
     if (profileId) params.append('profile_id', profileId.toString())
     const query = params.toString()
-    return apiClient.post<ImportResponse>(`/watchlist/${provider}/import/advanced${query ? `?${query}` : ''}`, {
-      advanced_imports: imports,
-      is_anonymous: isAnonymous,
-      anonymous_display_name: anonymousDisplayName || undefined,
-    })
+    const response = await apiClient.post<ImportResponse>(
+      `/watchlist/${provider}/import/advanced${query ? `?${query}` : ''}`,
+      {
+        advanced_imports: imports,
+        is_anonymous: isAnonymous,
+        anonymous_display_name: anonymousDisplayName || undefined,
+      },
+    )
+    return {
+      ...response,
+      details: response.details.map((detail, index) => ({
+        ...detail,
+        info_hash: detail.info_hash || imports[index]?.info_hash || detail.torrent_ref || '',
+      })),
+    }
   },
 }
 

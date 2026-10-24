@@ -69,14 +69,28 @@ export function useCatalogStreams(
   episode?: number,
   profileId?: number,
   provider?: string,
-  options?: { enabled?: boolean; streamId?: string; refetchInterval?: number | false },
+  options?: { enabled?: boolean; streamId?: string; resourceId?: string; refetchInterval?: number | false },
   profileUuid?: string,
 ) {
   const streamId = options?.streamId
   return useQuery({
-    queryKey: catalogKeys.streams(catalogType, mediaId.toString(), season, episode, profileId, provider, streamId),
+    queryKey: [
+      ...catalogKeys.streams(catalogType, mediaId.toString(), season, episode, profileId, provider, streamId),
+      options?.resourceId,
+      profileUuid,
+    ],
     queryFn: () =>
-      catalogApi.getStreams(catalogType, mediaId, season, episode, profileId, provider, profileUuid, streamId),
+      catalogApi.getStreams(
+        catalogType,
+        mediaId,
+        season,
+        episode,
+        profileId,
+        provider,
+        profileUuid,
+        streamId,
+        options?.resourceId,
+      ),
     // Require profileId and provider to be set to avoid unnecessary API calls
     // Movie and TV channels don't need season/episode, series does (unless stream_id deep link)
     enabled:

@@ -38,6 +38,7 @@ These 4 variables must be set before MediaFusion will start:
 | `IS_PUBLIC_INSTANCE` | `false` | When `true`, disables API password enforcement everywhere. Use for fully open community instances. |
 | `MIN_SCRAPING_VIDEO_SIZE` | `26214400` | Minimum file size in bytes (25 MB) to consider a torrent file a valid video. |
 | `DISABLED_CONTENT_TYPES` | `[]` | JSON array of content types to disable globally: `magnet`, `torrent`, `nzb`, `iptv`, `youtube`, `http`, `acestream`, `telegram`. |
+| `HIDE_TORRENT_INFO_HASHES` | `false` | Hide torrent hashes, magnets and torrent-file data in non-admin JSON responses, including Stremio. Playback uses authenticated encrypted references. P2P-only streams and non-admin Torznab access are unavailable in this mode. Restart the API after changing this flag; purge any existing reverse-proxy response caches. |
 | `DISABLED_PROVIDERS` | `[]` | JSON array of provider names to remove from the Configure UI: `p2p`, `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `qbittorrent`, `stremthru`, `easydebrid`, `debrider`. |
 | `MAX_STREAMING_PROVIDERS_PER_PROFILE` | `5` | Maximum number of providers a user profile can configure. |
 | `PROVIDER_SIGNUP_LINKS` | *(built-in)* | JSON object of provider → list of signup URLs. Appended to built-in defaults. |

@@ -26,5 +26,6 @@ pub mod services;
 pub mod state;
 pub mod stremio_auth_middleware;
 pub mod template;
+pub mod torrent_privacy_middleware;
 pub mod usenet_compat;
 pub mod util;

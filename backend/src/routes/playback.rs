@@ -18,7 +18,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{Method, StatusCode, header},
+    http::{HeaderMap, Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use fred::prelude::{Expiration, KeysInterface};
@@ -73,11 +73,13 @@ pub struct PlaybackPathSeEpFilename {
 
 pub async fn handler_base(
     method: Method,
+    headers: HeaderMap,
     Path(p): Path<PlaybackPath>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
         method,
+        headers,
         state,
         p.secret_str,
         p.provider_name,
@@ -91,11 +93,13 @@ pub async fn handler_base(
 
 pub async fn handler_with_filename(
     method: Method,
+    headers: HeaderMap,
     Path(p): Path<PlaybackPathWithFilename>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
         method,
+        headers,
         state,
         p.secret_str,
         p.provider_name,
@@ -109,11 +113,13 @@ pub async fn handler_with_filename(
 
 pub async fn handler_seep(
     method: Method,
+    headers: HeaderMap,
     Path(p): Path<PlaybackPathSeEp>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
         method,
+        headers,
         state,
         p.secret_str,
         p.provider_name,
@@ -127,11 +133,13 @@ pub async fn handler_seep(
 
 pub async fn handler_seep_filename(
     method: Method,
+    headers: HeaderMap,
     Path(p): Path<PlaybackPathSeEpFilename>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
         method,
+        headers,
         state,
         p.secret_str,
         p.provider_name,
@@ -147,6 +155,7 @@ pub async fn handler_seep_filename(
 
 async fn dispatch(
     method: Method,
+    headers: HeaderMap,
     state: Arc<AppState>,
     secret_str: String,
     provider_name: String,
@@ -155,6 +164,23 @@ async fn dispatch(
     episode: Option<i32>,
     filename: Option<String>,
 ) -> Response {
+    let (info_hash, season, episode, filename) = if info_hash.starts_with("T-") {
+        let Some(reference) = crypto::torrent_ref::open(&info_hash, &state.config.secret_key)
+            .filter(|reference| {
+                reference.scope == crypto::torrent_ref::scope(&secret_str, &provider_name)
+            })
+        else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        (
+            reference.hash,
+            reference.season,
+            reference.episode,
+            reference.filename,
+        )
+    } else {
+        (info_hash, season, episode, filename)
+    };
     let info_hash = info_hash.to_lowercase();
 
     let resolve_fut = resolve(
@@ -199,7 +225,58 @@ async fn dispatch(
         }
     };
 
+    if state.config.hide_torrent_info_hashes
+        && (crate::torrent_privacy_middleware::contains_hash(&video_url)
+            || video_url.to_ascii_lowercase().contains(&info_hash))
+    {
+        return private_video_response(&state.debrid_http, method, &video_url, &headers).await;
+    }
     playback_redirect(method, video_url)
+}
+
+/// Rare provider URLs include a hash (often in the physical filename). Relay
+/// their bytes rather than revealing that URL in Location. Preserve byte ranges.
+pub async fn private_video_response(
+    http: &reqwest::Client,
+    method: Method,
+    url: &str,
+    headers: &HeaderMap,
+) -> Response {
+    let mut request = http
+        .request(method.clone(), url)
+        .timeout(std::time::Duration::from_secs(86_400));
+    for name in [header::RANGE, header::IF_RANGE] {
+        if let Some(value) = headers.get(&name) {
+            request = request.header(name, value);
+        }
+    }
+    let Ok(upstream) = request.send().await else {
+        return StatusCode::BAD_GATEWAY.into_response();
+    };
+    if upstream.status().is_redirection() {
+        return StatusCode::BAD_GATEWAY.into_response();
+    }
+    let mut response = Response::builder()
+        .status(upstream.status())
+        .header(header::CACHE_CONTROL, "private, no-store");
+    for name in [
+        header::CONTENT_TYPE,
+        header::CONTENT_LENGTH,
+        header::CONTENT_RANGE,
+        header::ACCEPT_RANGES,
+        header::LAST_MODIFIED,
+    ] {
+        if let Some(value) = upstream.headers().get(&name) {
+            response = response.header(name, value);
+        }
+    }
+    response
+        .body(if method == Method::HEAD {
+            Body::empty()
+        } else {
+            Body::from_stream(upstream.bytes_stream())
+        })
+        .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
 }
 
 fn provider_resolve_budget(

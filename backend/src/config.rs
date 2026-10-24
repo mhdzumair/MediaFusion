@@ -327,6 +327,8 @@ pub struct AppConfig {
     /// Mirrors Python's `disabled_providers`. JSON array of provider service names to
     /// block globally, e.g. `'["p2p","realdebrid"]'`. "p2p" disables WebTorrent fallback.
     pub disabled_providers: Vec<String>,
+    /// Hide torrent identifiers from non-admin responses and use opaque playback references.
+    pub hide_torrent_info_hashes: bool,
     /// Mirrors Python's `disabled_content_types`. JSON array of content type strings to
     /// block globally, e.g. `'["magnet","torrent"]'`.
     pub disabled_content_types: Vec<String>,
@@ -820,6 +822,7 @@ impl AppConfig {
                         "web.h264".into(),
                     ]
                 }),
+            hide_torrent_info_hashes: env("HIDE_TORRENT_INFO_HASHES").ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             disabled_providers: env("DISABLED_PROVIDERS")
                 .ok().and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
                 .unwrap_or_default(),

@@ -973,6 +973,70 @@ pub async fn get_media_detail(
     .into_response()
 }
 
+/// Parse episode suffixes from the right, preserving namespaces such as tmdb:123.
+pub fn parse_stream_resource_id(
+    kind: &str,
+    raw: &str,
+) -> Option<(String, Option<i32>, Option<i32>)> {
+    let raw = raw.strip_suffix(".json")?;
+    if raw.is_empty() {
+        return None;
+    }
+    if kind != "series" {
+        return Some((raw.into(), None, None));
+    }
+    let (base, episode) = raw.rsplit_once(':')?;
+    let (base, season) = base.rsplit_once(':')?;
+    let (season, episode) = (season.parse::<i32>().ok()?, episode.parse::<i32>().ok()?);
+    if base.is_empty() || season < 0 || episode < 1 {
+        return None;
+    }
+    Some((base.into(), Some(season), Some(episode)))
+}
+
+/// Proxy-readable Stremio resource grammar, with the existing web UI auth and profile rules.
+pub async fn get_resource_streams(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path((catalog_type, video_id)): Path<(String, String)>,
+    Query(mut params): Query<StreamsQuery>,
+) -> Response {
+    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
+        return unauthorized();
+    }
+    if !matches!(catalog_type.as_str(), "movie" | "series" | "tv") {
+        return bad_request("Invalid stream type");
+    }
+    let parsed = parse_stream_resource_id(&catalog_type, &video_id).or_else(|| {
+        // Existing stream deep links resolve the episode from stored file links.
+        if catalog_type == "series" && params.stream_id.is_some() {
+            Some((video_id.strip_suffix(".json")?.into(), None, None))
+        } else {
+            None
+        }
+    });
+    let Some((id, season, episode)) = parsed else {
+        return bad_request("Invalid stream resource ID");
+    };
+    params.season = season;
+    params.episode = episode;
+    let media_id = match db::resolve_media_ids(&state.pool_ro, &id, &catalog_type).await {
+        Ok((id, _)) if id.0 > 0 => id.0,
+        Ok(_) => return Json(json!({"streams":[]})).into_response(),
+        Err(error) => {
+            tracing::warn!(%error,"stream resource media lookup failed");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    get_media_streams(
+        headers,
+        State(state),
+        Path((catalog_type, media_id)),
+        Query(params),
+    )
+    .await
+}
+
 /// GET /api/v1/catalog/{catalog_type}/{media_id}/streams
 pub async fn get_media_streams(
     headers: HeaderMap,
@@ -996,7 +1060,9 @@ pub async fn get_media_streams(
     let mut effective_episode = params.episode;
 
     if catalog_type == "series" {
-        if let Some(sid) = params.stream_id {
+        if (effective_season.is_none() || effective_episode.is_none())
+            && let Some(sid) = params.stream_id
+        {
             let ep_row: Option<(i32, i32)> = sqlx::query_as(
                 r#"SELECT fml.season_number, fml.episode_number
                    FROM stream_file sf
@@ -1077,7 +1143,19 @@ pub async fn get_media_streams(
             crate::crypto::profile::merge_secrets(&mut config, &secrets);
         }
         profile_user_data = serde_json::from_value::<UserData>(config.clone()).ok();
-        let providers = extract_streaming_providers(&config);
+        let mut providers = extract_streaming_providers(&config);
+        providers.retain(|provider| {
+            provider
+                .get("service")
+                .and_then(|v| v.as_str())
+                .is_none_or(|service| {
+                    !state
+                        .config
+                        .disabled_providers
+                        .iter()
+                        .any(|disabled| disabled.eq_ignore_ascii_case(service))
+                })
+        });
         tracing::debug!(
             "get_media_streams profile={pid} providers_count={}",
             providers.len()
@@ -1558,7 +1636,7 @@ pub async fn get_media_streams(
                 if r.stream_type == StreamType::Torrent {
                         if let Some(ref hash) = r.info_hash {
                             let filename = r.filename.as_deref().unwrap_or("");
-                            let base = match (params.season, params.episode) {
+                            let base = match (season, episode) {
                                 (Some(s), Some(e)) => format!(
                                     "{}/streaming_provider/{}/playback/{}/{}/{}/{}",
                                     state.config.host_url, secret_str, svc, hash, s, e
@@ -1579,7 +1657,7 @@ pub async fn get_media_streams(
                     } else if r.stream_type == StreamType::Usenet {
                         if let Some(ref guid) = r.nzb_guid {
                             if USENET_CAPABLE.contains(&svc.as_str()) {
-                                match (params.season, params.episode) {
+                                match (season, episode) {
                                     (Some(s), Some(e)) => Some(format!(
                                         "{}/streaming_provider/{}/usenet/{}/{}/{}/{}",
                                         state.config.host_url, secret_str, svc, guid, s, e
@@ -1602,38 +1680,12 @@ pub async fn get_media_streams(
                 None
             };
 
-            // Build browser_url by wrapping raw_playback_url through MediaFlow when configured.
-            // AceStream URLs already target MediaFlow directly and must not be double-wrapped.
-            let browser_url: Option<String> = if r.stream_type == StreamType::Acestream {
-                raw_playback_url.clone()
-            } else {
-                raw_playback_url.as_deref().and_then(|raw| {
-                    mediaflow_web_config.and_then(|mf| {
-                        let proxy_url = mf.proxy_url.as_deref()?;
-                        let mut params = std::collections::BTreeMap::new();
-                        if let Some(ap) = mf.api_password.as_deref().filter(|s| !s.is_empty()) {
-                            params.insert("api_password".into(), ap.to_string());
-                        }
-                        mediaflow::encode_mediaflow_proxy_url(
-                            proxy_url,
-                            "/proxy/stream",
-                            Some(raw),
-                            params,
-                            None,
-                            None,
-                        )
-                        .ok()
-                    })
-                })
-            };
-
             let mut output = json!({
                 "id": r.id,
                 "info_hash": r.info_hash,
                 "yt_id": r.yt_id,
                 "ytId": r.yt_id,
                 "url": raw_playback_url,
-                "browser_url": browser_url,
                 "name": display_name,
                 "description": description,
                 "stream_name": r.name,
@@ -1687,8 +1739,14 @@ pub async fn get_media_streams(
     //              source (Easynews / TorBox Search) belongs to that provider
     //   other    → always shown (http, telegram, youtube, acestream, etc.)
     let svc = selected_provider.as_deref().unwrap_or("p2p");
-    let can_torrent = svc == "p2p" || crate::routes::stream::TORRENT_CAPABLE.contains(&svc);
-    let can_usenet = crate::routes::stream::USENET_CAPABLE.contains(&svc);
+    let provider_enabled = !state
+        .config
+        .disabled_providers
+        .iter()
+        .any(|disabled| disabled.eq_ignore_ascii_case(svc));
+    let can_torrent =
+        provider_enabled && (svc == "p2p" || crate::routes::stream::TORRENT_CAPABLE.contains(&svc));
+    let can_usenet = provider_enabled && crate::routes::stream::USENET_CAPABLE.contains(&svc);
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
     // torbox is both torrent- and usenet-capable, so the coarse can_torrent/can_usenet
     // gate alone cannot be skipped — a usenet row must still pass the per-source
@@ -1755,6 +1813,7 @@ pub async fn get_media_streams(
         "resolved_season": if catalog_type == "series" { season } else { None },
         "resolved_episode": if catalog_type == "series" { episode } else { None },
         "web_playback_enabled": web_playback_enabled,
+        "web_playback": mediaflow_web_config.map(|mf| json!({"proxy_url":mf.proxy_url,"api_password":mf.api_password})),
         "streaming_providers": streaming_providers,
         "selected_provider": selected_provider,
         "profile_id": profile_id_val,
@@ -1773,4 +1832,31 @@ pub async fn report_stream(
     }
 
     Json(json!({"message": "Report received"})).into_response()
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::parse_stream_resource_id;
+    #[test]
+    fn episode_suffix_preserves_external_id_namespaces() {
+        for id in ["tt0944947", "tmdb:1399", "kitsu:123", "mf:42"] {
+            assert_eq!(
+                parse_stream_resource_id("series", &format!("{id}:1:2.json")),
+                Some((id.into(), Some(1), Some(2)))
+            );
+        }
+        assert_eq!(
+            parse_stream_resource_id("movie", "tt0063350.json"),
+            Some(("tt0063350".into(), None, None))
+        );
+        for invalid in [
+            "tt1:1.json",
+            "tt1:-1:2.json",
+            "tt1:1:0.json",
+            "tt1:season:2.json",
+            "tt1:1:2",
+        ] {
+            assert!(parse_stream_resource_id("series", invalid).is_none());
+        }
+    }
 }

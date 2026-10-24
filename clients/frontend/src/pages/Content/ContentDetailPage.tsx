@@ -1,3 +1,5 @@
+import { streamResourceId, isProxyStream } from '@/lib/streamResource'
+import { ProxyStreamCard } from '@/components/stream/ProxyStreamCard'
 import { MediaStreamImport, type MediaStreamImportHandle } from './MediaStreamImport'
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { getContentDetailReturnUrl, getContentDetailReturnLabel } from '@/pages/Library/browseNavigation'
@@ -1079,7 +1081,9 @@ function StreamActionDialog({
                         ) : (
                           <>
                             <Copy className="mr-2 h-4 w-4 shrink-0" />
-                            <span className="truncate">{isTorrentStream ? 'Copy Info Hash' : 'Copy Stream URL'}</span>
+                            <span className="truncate">
+                              {isTorrentStream && stream.info_hash ? 'Copy Info Hash' : 'Copy Stream URL'}
+                            </span>
                           </>
                         )}
                       </Button>
@@ -1479,12 +1483,14 @@ export function ContentDetailPage() {
     {
       enabled:
         isAuthenticated &&
+        !!item &&
         selectedProfileId !== undefined && // Wait for profile to be selected
         selectedProvider !== undefined && // Wait for provider to be selected
         (catalogType === 'movie' ||
           catalogType === 'tv' ||
           (selectedSeason !== undefined && selectedEpisode !== undefined) ||
           hasStreamDeepLink),
+      resourceId: streamResourceId(mediaId, item?.external_ids),
       streamId: hasStreamDeepLink ? streamFilters.streamIdFilter : undefined,
     },
     selectedProfileUuid,
@@ -1761,7 +1767,8 @@ export function ContentDetailPage() {
   const filteredStreams = useMemo(() => {
     if (!streamsData?.streams) return []
 
-    let result = [...streamsData.streams]
+    const proxyStreams = streamsData.streams.filter(isProxyStream)
+    let result = streamsData.streams.filter((stream) => !isProxyStream(stream))
 
     // Privileged users (moderator+) see keyword-blocked streams; admins also see manually blocked ones.
     if (!isModerator) {
@@ -1865,7 +1872,7 @@ export function ContentDetailPage() {
     }
 
     // Apply multi-key sorting (priority order — first non-tie wins)
-    return sortStreams(result, sortPriority)
+    return [...proxyStreams, ...sortStreams(result, sortPriority)]
   }, [streamsData, streamFilters, lastPlayedStreamId, isModerator, isAdmin])
 
   const streamTotalPages = Math.max(1, Math.ceil(filteredStreams.length / streamPageSize))
@@ -2765,37 +2772,57 @@ export function ContentDetailPage() {
                         <StreamGroupedList
                           streams={paginatedStreams}
                           groupBy="quality"
-                          renderStream={(stream, index) => (
-                            <StreamCard
-                              key={stream.id || index}
-                              stream={stream}
-                              onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                              mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                              mediaId={mediaId}
-                              isLastPlayed={
-                                stream.id !== undefined &&
-                                (String(stream.id) === lastPlayedStreamId ||
-                                  String(stream.id) === streamFilters.streamIdFilter)
-                              }
-                            />
-                          )}
+                          renderStream={(stream, index) =>
+                            isProxyStream(stream) ? (
+                              <ProxyStreamCard
+                                key={`proxy-${index}`}
+                                stream={stream}
+                                onPlay={() =>
+                                  handleWatchStream(stream, stream.browser_url || stream.url!, { rawUrl: stream.url })
+                                }
+                              />
+                            ) : (
+                              <StreamCard
+                                key={stream.id || index}
+                                stream={stream}
+                                onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                                mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                                mediaId={mediaId}
+                                isLastPlayed={
+                                  stream.id !== undefined &&
+                                  (String(stream.id) === lastPlayedStreamId ||
+                                    String(stream.id) === streamFilters.streamIdFilter)
+                                }
+                              />
+                            )
+                          }
                         />
                       ) : (
                         <div className="space-y-3">
-                          {paginatedStreams.map((stream, index) => (
-                            <StreamCard
-                              key={stream.id || index}
-                              stream={stream}
-                              onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                              mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                              mediaId={mediaId}
-                              isLastPlayed={
-                                stream.id !== undefined &&
-                                (String(stream.id) === lastPlayedStreamId ||
-                                  String(stream.id) === streamFilters.streamIdFilter)
-                              }
-                            />
-                          ))}
+                          {paginatedStreams.map((stream, index) =>
+                            isProxyStream(stream) ? (
+                              <ProxyStreamCard
+                                key={`proxy-${index}`}
+                                stream={stream}
+                                onPlay={() =>
+                                  handleWatchStream(stream, stream.browser_url || stream.url!, { rawUrl: stream.url })
+                                }
+                              />
+                            ) : (
+                              <StreamCard
+                                key={stream.id || index}
+                                stream={stream}
+                                onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                                mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                                mediaId={mediaId}
+                                isLastPlayed={
+                                  stream.id !== undefined &&
+                                  (String(stream.id) === lastPlayedStreamId ||
+                                    String(stream.id) === streamFilters.streamIdFilter)
+                                }
+                              />
+                            ),
+                          )}
                         </div>
                       )}
                       <ListPagination
