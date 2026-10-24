@@ -37,6 +37,14 @@ fn video_files(files: &[FileEntry]) -> Vec<&FileEntry> {
         .collect()
 }
 
+/// A caller-supplied `file_index` is only usable when it points at a video
+/// file. Stub rows can carry an index that lands on an `.nfo` or sample text
+/// file, and playing that just hands the player a non-video link.
+fn video_file_index(videos: &[&FileEntry], file_index: Option<i32>) -> Option<usize> {
+    let fi = usize::try_from(file_index?).ok()?;
+    videos.iter().find(|f| f.index == fi).map(|f| f.index)
+}
+
 fn parse_season_episode(
     filename: &str,
     torrent_name: &str,
@@ -229,11 +237,8 @@ pub fn select_torrent_file_index(
         // match — scraper-guessed indices (e.g. a stub torrent with only one
         // episode mapped) are otherwise indistinguishable from a verified
         // index and would silently win, playing the wrong file.
-        if let Some(fi) = file_index
-            && fi >= 0
-            && (fi as usize) < files.len()
-        {
-            return Ok(fi as usize);
+        if let Some(idx) = video_file_index(&videos, file_index) {
+            return Ok(idx);
         }
         if !videos.is_empty() {
             return Ok(videos[0].index);
@@ -244,11 +249,8 @@ pub fn select_torrent_file_index(
         ));
     }
 
-    if let Some(fi) = file_index
-        && fi >= 0
-        && (fi as usize) < files.len()
-    {
-        return Ok(fi as usize);
+    if let Some(idx) = video_file_index(&videos, file_index) {
+        return Ok(idx);
     }
 
     if let Some(air_date) = episode_air_date.filter(|d| !d.trim().is_empty()) {
@@ -591,6 +593,33 @@ mod tests {
             select_torrent_file_index(&files, "Formula 1", None, None, None, Some(2), None)
                 .unwrap();
         assert_eq!(idx_no_se, 2);
+    }
+
+    #[test]
+    fn torrent_stub_file_index_on_nfo_is_never_selected() {
+        // Season pack without the requested episode, where a stub row maps
+        // S01E01 to index 0 and index 0 is the release `.nfo`.
+        let files = vec![
+            entry(0, "Show S01 1080p BluRay x264-GRP.nfo", 534),
+            entry(1, "Show.S01E02.1080p.BluRay.x264-GRP.mkv", 3_000_000_000),
+            entry(2, "Show.S01E03.1080p.BluRay.x264-GRP.mkv", 3_100_000_000),
+        ];
+        let release = "Show S01 1080p BluRay x264-GRP";
+
+        let idx = select_torrent_file_index(&files, release, None, Some(1), Some(1), Some(0), None)
+            .unwrap();
+        assert_ne!(idx, 0);
+
+        let idx_no_se =
+            select_torrent_file_index(&files, release, None, None, None, Some(0), None).unwrap();
+        assert_eq!(idx_no_se, 2);
+
+        // Debrid providers go through `select_debrid_file_index`, which retries
+        // without season/episode, so the `.nfo` must not come back from there either.
+        let pairs: Vec<(String, i64)> = files.iter().map(|f| (f.name.clone(), f.size)).collect();
+        let idx_debrid =
+            select_debrid_file_index(&pairs, release, None, Some(0), Some(1), Some(1), None);
+        assert_ne!(idx_debrid, 0);
     }
 
     #[test]
