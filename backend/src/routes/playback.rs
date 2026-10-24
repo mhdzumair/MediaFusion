@@ -641,7 +641,7 @@ async fn resolve_playback_url(
             // MediaFlow's IP as user_ip: that pins TorBox to a CDN edge near the
             // proxy even though direct Stremio playback fetches bytes elsewhere.
             use providers::torrents::torbox as p;
-            let url = p::get_video_url(
+            p::get_video_url(
                 http,
                 token,
                 info_hash,
@@ -654,8 +654,7 @@ async fn resolve_playback_url(
                 Some(stream_info.name.as_str()),
                 fwd,
             )
-            .await?;
-            (url, Vec::<ProviderFile>::new())
+            .await?
         }
         "stremthru" => call_provider_simple!(providers::torrents::stremthru),
         "torrin" => call_provider_simple!(providers::torrents::torrin),

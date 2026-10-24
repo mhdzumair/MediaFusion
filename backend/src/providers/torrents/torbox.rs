@@ -7,7 +7,10 @@ use crate::providers::{
     ProviderError,
     file_selection::select_debrid_file_index,
     response_json,
-    torrents::transport::{MediaFlowForward, encode_form_body},
+    torrents::{
+        metadata_update::ProviderFile,
+        transport::{MediaFlowForward, encode_form_body},
+    },
 };
 
 const BASE_URL: &str = "https://api.torbox.app/v1/api";
@@ -145,7 +148,15 @@ async fn get_mylist(
 }
 
 fn find_torrent_in_list(list: &Value, info_hash: &str) -> Option<Value> {
-    let arr = list.get("data").and_then(|d| d.as_array())?;
+    let data = list.get("data")?;
+    if data.is_object() {
+        return data
+            .get("hash")
+            .and_then(Value::as_str)
+            .filter(|hash| hash.eq_ignore_ascii_case(info_hash))
+            .map(|_| data.clone());
+    }
+    let arr = data.as_array()?;
     let hash_lower = info_hash.to_lowercase();
     arr.iter()
         .find(|t| {
@@ -303,7 +314,7 @@ fn build_download_link_from_torrent(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Result<String, ProviderError> {
+) -> Result<(String, Vec<ProviderFile>), ProviderError> {
     let torrent_id = torrent.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
         ProviderError::api("Missing torrent id in TorBox response", "api_error.mp4")
     })?;
@@ -332,20 +343,42 @@ fn build_download_link_from_torrent(
     );
     let file_id = raw_files[idx].0;
 
-    Ok(request_download_link(token, torrent_id, file_id))
+    let files = raw_files
+        .into_iter()
+        .enumerate()
+        .map(|(index, (_, path, bytes))| ProviderFile {
+            file_index: index as i32,
+            path,
+            bytes,
+        })
+        .collect();
+    Ok((request_download_link(token, torrent_id, file_id), files))
 }
 
 async fn ready_playback_from_mylist(
     http: &reqwest::Client,
     token: &str,
     info_hash: &str,
+    torrent_id: Option<i64>,
     forward: Option<&MediaFlowForward>,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Result<String, ProviderError> {
-    let mylist = get_mylist(http, token, forward).await?;
+) -> Result<(String, Vec<ProviderFile>), ProviderError> {
+    // A create response identifies the new torrent: avoid fetching an entire
+    // account's file lists just to resolve this one item.
+    let mylist = if let Some(id) = torrent_id {
+        tb_get(
+            http,
+            token,
+            &format!("{BASE_URL}/torrents/mylist?id={id}&bypass_cache=true"),
+            forward,
+        )
+        .await?
+    } else {
+        get_mylist(http, token, forward).await?
+    };
     if let Some(torrent) = find_torrent_in_list(&mylist, info_hash) {
         let finished = torrent
             .get("download_finished")
@@ -383,7 +416,7 @@ pub async fn get_video_url(
     torrent_file: Option<&[u8]>,
     torrent_name: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
-) -> Result<String, ProviderError> {
+) -> Result<(String, Vec<ProviderFile>), ProviderError> {
     let magnet = format!(
         "magnet:?xt=urn:btih:{}&{}",
         info_hash,
@@ -435,7 +468,7 @@ pub async fn get_video_url(
             Ok(r) => r,
             Err(ProviderError::Api { ref message, .. }) if message.contains("DIFF_ISSUE") => {
                 return ready_playback_from_mylist(
-                    http, token, info_hash, forward, filename, file_index, season, episode,
+                    http, token, info_hash, None, forward, filename, file_index, season, episode,
                 )
                 .await;
             }
@@ -449,7 +482,17 @@ pub async fn get_video_url(
 
     if detail.contains("Found Cached") {
         return ready_playback_from_mylist(
-            http, token, info_hash, forward, filename, file_index, season, episode,
+            http,
+            token,
+            info_hash,
+            create_resp
+                .pointer("/data/torrent_id")
+                .and_then(Value::as_i64),
+            forward,
+            filename,
+            file_index,
+            season,
+            episode,
         )
         .await;
     }
@@ -613,6 +656,103 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
 #[cfg(test)]
 mod tests {
     use super::request_download_link;
+
+    fn ready_torrent() -> serde_json::Value {
+        serde_json::json!({
+            "id":42, "hash":"abcdef", "name":"Show.S04", "download_finished":true,
+            "download_present":true, "files":[
+                {"id":11,"short_name":"Show.S04E01.mkv","size":100},
+                {"id":18,"short_name":"Show.S04E08.mkv","size":200}
+            ]
+        })
+    }
+
+    #[tokio::test]
+    async fn ready_torrent_resolves_once_and_returns_metadata_for_playback_cache() {
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path, query_param},
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/proxy/forward"))
+            .and(query_param(
+                "d",
+                format!("{}/torrents/mylist?bypass_cache=true", super::BASE_URL),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"success":true,"data":[ready_torrent()]})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let forward = super::MediaFlowForward::new(&server.uri(), "test-password");
+        let http = crate::util::http::build_debrid(None, 30);
+        let (url, files) = super::get_video_url(
+            &http,
+            "token",
+            "abcdef",
+            &[],
+            None,
+            Some(0),
+            Some(4),
+            Some(8),
+            None,
+            None,
+            Some(&forward),
+        )
+        .await
+        .unwrap();
+        assert!(url.contains("torrent_id=42&file_id=18&redirect=true"));
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[1].file_index, 1);
+        assert_eq!(files[1].path, "Show.S04E08.mkv");
+        assert_eq!(files[1].bytes, 200);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn newly_created_cached_torrent_fetches_only_its_own_details() {
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path, query_param},
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/proxy/forward"))
+            .and(query_param(
+                "d",
+                format!(
+                    "{}/torrents/mylist?id=42&bypass_cache=true",
+                    super::BASE_URL
+                ),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"success":true,"data":ready_torrent()})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let forward = super::MediaFlowForward::new(&server.uri(), "test-password");
+        let http = crate::util::http::build_debrid(None, 30);
+        let (url, files) = super::ready_playback_from_mylist(
+            &http,
+            "token",
+            "abcdef",
+            Some(42),
+            Some(&forward),
+            None,
+            None,
+            Some(4),
+            Some(8),
+        )
+        .await
+        .unwrap();
+        assert!(url.contains("file_id=18"));
+        assert_eq!(files.len(), 2);
+    }
 
     #[test]
     fn redirect_download_link_does_not_pin_cdn_to_resolver_ip() {
