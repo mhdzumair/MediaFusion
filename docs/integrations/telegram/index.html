@@ -22,7 +22,7 @@
       
       
       <link rel="icon" href="../../assets/logo.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -30,10 +30,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -1655,6 +1655,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#catalog-title-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog title quality
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalog title quality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#review-existing-telegram-catalog-entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review existing Telegram catalog entries
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2236,6 +2264,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#catalog-title-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog title quality
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalog title quality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#review-existing-telegram-catalog-entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review existing Telegram catalog entries
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2731,6 +2787,40 @@
 </table>
 <p>Full defaults and types: <a href="../../reference/env-reference/#telegram-bot">Environment Variable Reference</a>.</p>
 <hr>
+<h2 id="catalog-title-quality">Catalog title quality<a class="headerlink" href="#catalog-title-quality" title="Permanent link">¶</a></h2>
+<p>Background and on-demand channel scrapes validate filenames before allowing
+unresolved movie/series entries into the catalog. Plausible titles with a release
+year, season/episode marker, resolution, source quality, or codec can still be
+stored when metadata providers have no match. Short, numeric, and non-Latin
+titles are supported; there is no English dictionary requirement.</p>
+<p>Upload/scene identifiers (<code>bgvid</code>, <code>vid</code> numbers, <code>JD stream</code>, etc.), long numeric
+identifiers, hash filenames, generic upload names (<code>video_12345</code>), and bare names
+without release details require a provider match. Existing unverified catalog
+stubs do not satisfy that requirement. A valid caption IMDb lookup can rescue an
+opaque filename; failed caption lookups never create fake provider-linked stubs,
+and the provider's canonical title is retained.</p>
+<p>This is a conservative heuristic, not a guarantee that every plausible title is
+a real film. An unresolved genuine file with only a bare title needs release
+details in its filename or an IMDb ID in its caption to be indexed. Keyword and
+provider adult-content filters continue to apply.</p>
+<h3 id="review-existing-telegram-catalog-entries">Review existing Telegram catalog entries<a class="headerlink" href="#review-existing-telegram-catalog-entries" title="Permanent link">¶</a></h3>
+<p>The opt-in cleanup job examines only unverified Telegram-only media without
+external IDs. It preserves manually created/reviewed entries and any title that
+has at least one credible release. It defaults to a dry run and logs candidate
+media IDs, titles, and reasons:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>telegram_catalog_cleanup<span class="w"> </span>--args<span class="w"> </span><span class="s1">'{}'</span>
+</span></code></pre></div>
+<p>After reviewing the report, hide the candidates with:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>telegram_catalog_cleanup<span class="w"> </span>--args<span class="w"> </span><span class="s1">'{"dry_run":false}'</span>
+</span></code></pre></div>
+<p>This sets the existing media block flag with a <code>Telegram catalog quality:</code> reason;
+it does not delete media, files, or streams. Entries can be restored using the
+admin blocked-content controls. Catalog/metadata caches are invalidated after
+each changed batch. The job checks eligibility again before applying changes,
+so newly enriched or reviewed entries are protected. Optional <code>batch_size</code>
+(default 500, maximum 5000) and <code>after_id</code> support resumable scans. It is not
+scheduled automatically; deploy the new scraper first, then review the dry run.</p>
+<hr>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
 <h3 id="bot-cannot-be-added-to-backup-channel">Bot cannot be added to backup channel<a class="headerlink" href="#bot-cannot-be-added-to-backup-channel" title="Permanent link">¶</a></h3>
 <ul>
@@ -2886,10 +2976,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "search.share", "content.tabs.link", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "search.share", "content.tabs.link", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
       
         <script src="../../assets/mermaid-init.js"></script>
       
