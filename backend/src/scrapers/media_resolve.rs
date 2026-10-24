@@ -111,6 +111,13 @@ pub async fn find_or_create_media_strict(
     .await
 }
 
+/// Resolve an existing media row for the given title/year, or create a new
+/// one via external metadata lookup (TMDB → Cinemeta → anime providers).
+///
+/// Matching order: exact title+year → year-aware fuzzy title → external
+/// metadata → stub. Fuzzy matching is constrained to rows with a matching
+/// or unknown year when a year is known, so same-title/different-year
+/// movies don't collapse into one record.
 #[allow(clippy::too_many_arguments)]
 async fn find_or_create_media_inner(
     pool: &PgPool,
@@ -172,17 +179,34 @@ async fn find_or_create_media_inner(
     // 2. Fuzzy pg_trgm match.
     // Use the `%` similarity operator (not the function) so the query planner
     // can use the GIN trigram index — the function form causes a seq-scan.
-    let fuzzy: Option<(i32, String, Option<i32>)> = sqlx::query_as(
-        "SELECT id, title, year FROM media \
-         WHERE type = $1 AND title % $2 \
-         ORDER BY similarity(title, $2) DESC LIMIT 1",
-    )
-    .bind(media_type)
-    .bind(title)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    // Year-aware: when a year is known, only fuzzy-match rows with a matching
+    // or unknown year so same-title/different-year movies don't collapse.
+    let fuzzy: Option<(i32, String, Option<i32>)> = if let Some(y) = year {
+        sqlx::query_as(
+            "SELECT id, title, year FROM media \
+             WHERE type = $1 AND title % $2 AND (year = $3 OR year IS NULL) \
+             ORDER BY similarity(title, $2) DESC LIMIT 1",
+        )
+        .bind(media_type)
+        .bind(title)
+        .bind(y)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    } else {
+        sqlx::query_as(
+            "SELECT id, title, year FROM media \
+             WHERE type = $1 AND title % $2 \
+             ORDER BY similarity(title, $2) DESC LIMIT 1",
+        )
+        .bind(media_type)
+        .bind(title)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    };
 
     if let Some((id, t, y)) = fuzzy {
         let sim = crate::parser::similarity_ratio(title, &t);
@@ -1311,6 +1335,13 @@ pub async fn ensure_add_title_to_poster(pool: &PgPool, media_id: i32) {
     .await;
 }
 
+/// Resolve or create a sports media stub for the given title/year/category.
+///
+/// Matching order: exact title+year → year-aware fuzzy title → create stub.
+/// Fuzzy matching is skipped for racing and team-matchup categories (those
+/// always create a new row) and is constrained to rows with a matching or
+/// unknown year when a year is known, so same-title/different-year events
+/// don't collapse into one record.
 async fn find_or_create_sports_stub_inner(
     pool: &PgPool,
     title: &str,
@@ -1363,16 +1394,34 @@ async fn find_or_create_sports_stub_inner(
 
     if !is_racing && !is_team_matchup {
         // 2. Fuzzy pg_trgm match (same threshold as find_or_create_media).
-        let fuzzy: Option<(i32, String)> = sqlx::query_as(
-            "SELECT id, title FROM media WHERE type = $1 AND title % $2 \
-             ORDER BY similarity(title, $2) DESC LIMIT 1",
-        )
-        .bind(mt)
-        .bind(&lookup_title)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+        // Year-aware: when a year is known, only fuzzy-match rows with a
+        // matching or unknown year so same-title/different-year entries
+        // don't collapse into one record.
+        let fuzzy: Option<(i32, String)> = if let Some(y) = lookup_year {
+            sqlx::query_as(
+                "SELECT id, title FROM media WHERE type = $1 AND title % $2 \
+                 AND (year = $3 OR year IS NULL) \
+                 ORDER BY similarity(title, $2) DESC LIMIT 1",
+            )
+            .bind(mt)
+            .bind(&lookup_title)
+            .bind(y)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+        } else {
+            sqlx::query_as(
+                "SELECT id, title FROM media WHERE type = $1 AND title % $2 \
+                 ORDER BY similarity(title, $2) DESC LIMIT 1",
+            )
+            .bind(mt)
+            .bind(&lookup_title)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+        };
 
         if let Some((id, existing_title)) = fuzzy
             && crate::parser::similarity_ratio(&lookup_title, &existing_title) >= 70

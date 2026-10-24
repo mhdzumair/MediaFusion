@@ -132,17 +132,35 @@ pub async fn find_existing_media(
         return Some(MediaId(id));
     }
 
-    let fuzzy: Option<(i32, String)> = sqlx::query_as(
-        "SELECT id, title FROM media \
-         WHERE type = $1 AND title % $2 \
-         ORDER BY similarity(title, $2) DESC LIMIT 1",
-    )
-    .bind(media_type)
-    .bind(title)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    // Year-aware fuzzy match: when a year is known, only match rows with a
+    // matching or unknown year so same-title/different-year movies don't
+    // collapse into one record.
+    let fuzzy: Option<(i32, String)> = if let Some(y) = year {
+        sqlx::query_as(
+            "SELECT id, title FROM media \
+             WHERE type = $1 AND title % $2 AND (year = $3 OR year IS NULL) \
+             ORDER BY similarity(title, $2) DESC LIMIT 1",
+        )
+        .bind(media_type)
+        .bind(title)
+        .bind(y)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    } else {
+        sqlx::query_as(
+            "SELECT id, title FROM media \
+             WHERE type = $1 AND title % $2 \
+             ORDER BY similarity(title, $2) DESC LIMIT 1",
+        )
+        .bind(media_type)
+        .bind(title)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    };
 
     if let Some((id, existing_title)) = fuzzy
         && crate::parser::similarity_ratio(title, &existing_title) >= 70
