@@ -1082,3 +1082,32 @@ async fn fan_out_with_opts(
 
     all
 }
+
+#[cfg(test)]
+mod regional_identity_tests {
+    use super::*;
+
+    #[test]
+    fn indexer_imdb_match_does_not_allow_another_regional_edition() {
+        let meta = SearchMeta {
+            media_id: crate::db::MediaId(1),
+            imdb_id: Some("tt7084920".into()),
+            title: "Bigg Boss Tamil".into(),
+            year: Some(2017),
+        };
+        let files = vec![crate::scrapers::StreamFile {
+            file_index: 0,
+            filename: String::new(),
+            season_number: 10,
+            episode_number: 21,
+        }];
+        for (edition, expected) in [("Tamil", true), ("Telugu", false)] {
+            let raw =
+                format!("BIGG BOSS ({edition}) S10 EP21 DAY 20 TRUE WEB-DL - 720p - AVC - AAC");
+            assert_eq!(
+                validate_stream_core(&parser::parse_title(&raw), &files, &raw, &meta, "series"),
+                expected
+            );
+        }
+    }
+}

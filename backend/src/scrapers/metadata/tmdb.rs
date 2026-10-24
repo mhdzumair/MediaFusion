@@ -397,6 +397,15 @@ pub fn parse_tmdb_response(data: &Value, is_series: bool) -> Option<NormalizedMe
         None
     };
 
+    let title = if is_series {
+        crate::parser::series_identity::qualify_series_title(
+            &title,
+            data["original_language"].as_str(),
+        )
+    } else {
+        title
+    };
+
     Some(NormalizedMetadata {
         media_type: if is_series {
             MediaType::Series
@@ -554,6 +563,17 @@ pub async fn search(
             .or_else(|| item["name"].as_str())
             .unwrap_or("")
             .to_string();
+        let title_str = if is_series {
+            crate::parser::series_identity::qualify_series_title(
+                &title_str,
+                item["original_language"].as_str(),
+            )
+        } else {
+            title_str
+        };
+        if is_series && !crate::parser::series_identity::series_editions_match(title, &title_str) {
+            continue;
+        }
         let sim = crate::parser::similarity_ratio(title, &title_str);
         if sim < MIN_TITLE_SIMILARITY {
             continue;
@@ -666,6 +686,18 @@ pub fn to_legacy_details(meta: &NormalizedMetadata) -> super::TmdbDetails {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn regional_series_uses_original_language_to_preserve_identity() {
+        for (language, name) in [("ta", "Bigg Boss Tamil"), ("te", "Bigg Boss Telugu")] {
+            let meta = parse_tmdb_response(
+                &json!({"id":42,"name":"Bigg Boss","original_language":language}),
+                true,
+            )
+            .unwrap();
+            assert_eq!(meta.title, name);
+        }
+    }
 
     #[test]
     fn parse_tmdb_series_includes_genres_and_external_ids() {

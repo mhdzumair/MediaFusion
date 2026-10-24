@@ -2209,7 +2209,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\bUKR\b"),
+        rei(r"(?:\b|(?<=\d[xх]))UKR\b"),
         uniq_concat(value("uk")),
         lo(false, false),
     );
@@ -2567,12 +2567,8 @@ pub fn add_defaults(p: &mut Parser) {
         uniq_concat(value("ja")),
         lo(false, true),
     ); // Halfwidth Katakana
-    p.add(
-        "languages",
-        re(r"[\x{0400}-\x{04ff}]+"),
-        uniq_concat(value("ru")),
-        lo(false, true),
-    ); // Cyrillic
+    // Cyrillic is shared by many languages. Require an explicit language
+    // marker instead of labelling every Cyrillic release as Russian.
     p.add(
         "languages",
         re(r"[\x{0600}-\x{06ff}]+"),

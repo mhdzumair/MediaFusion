@@ -217,6 +217,7 @@ fn global_parser() -> &'static Parser {
 pub fn parse(raw: &str, translate_languages: bool) -> ParsedTitle {
     let map = global_parser().parse_raw(raw);
     let mut out = from_map(map, translate_languages);
+    out.title = crate::parser::series_identity::restore_series_edition(raw, &out.title);
     // Populate episode_title when a season/episode marker is present.
     if !out.seasons.is_empty() && !out.episodes.is_empty() {
         out.episode_title = extract_episode_title(raw, &out.title);
@@ -442,6 +443,43 @@ mod tests {
         let parsed = parse("Movie.2025.1080p.WEB-DL.OPUS.2.0-GROUP", true);
         assert_eq!(parsed.title, "Movie");
         assert!(parsed.audio.contains(&"OPUS".to_string()));
+    }
+
+    #[test]
+    fn explicit_ukrainian_tags_do_not_infer_russian_from_cyrillic() {
+        for tag in ["UKR", "2xUkr", "3хUKR", "Ukrainian"] {
+            let parsed = parse(&format!("Приклад.Show.2021.BDRemux.1080p.{tag}/Eng"), true);
+            assert!(
+                parsed.languages.contains(&"Ukrainian".to_string()),
+                "{tag}: {:?}",
+                parsed.languages
+            );
+            assert!(parsed.languages.contains(&"English".to_string()));
+            assert!(!parsed.languages.contains(&"Russian".to_string()));
+        }
+        assert!(parse("Пример.2021.1080p", true).languages.is_empty());
+        assert!(
+            parse("Приклад.2021.1080p.RUS.UKR.ENG", true)
+                .languages
+                .contains(&"Russian".to_string())
+        );
+        assert!(
+            !parse("Something.SUKR.2021", true)
+                .languages
+                .contains(&"Ukrainian".to_string())
+        );
+    }
+
+    #[test]
+    fn regional_series_identity_survives_language_extraction() {
+        for edition in ["Tamil", "Telugu"] {
+            let raw = format!(
+                "www.1TamilMV.lease - BIGG BOSS ({edition}) S10 EP21 DAY 20 TRUE WEB-DL - 720p - AVC - AAC - 350MB.mkv"
+            );
+            let parsed = parse(&raw, true);
+            assert_eq!(parsed.title, format!("Bigg Boss {edition}"));
+            assert_eq!(parsed.seasons, vec![10]);
+        }
     }
 
     #[test]

@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod episode_detector;
 pub mod filter;
+pub mod series_identity;
 pub mod sort;
 pub mod sports_parser;
 

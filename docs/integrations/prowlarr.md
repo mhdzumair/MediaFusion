@@ -66,3 +66,20 @@ Popular public trackers are free to add. Private trackers require an account on 
 MediaFusion exposes a native [Torznab API](https://github.com/mhdzumair/MediaFusion/blob/main/resources/yaml/mediafusion.yaml) that Radarr, Sonarr, and Prowlarr can use as an indexer.
 
 Add `https://your-mediafusion-instance/torznab` as a custom Torznab indexer in Prowlarr (or directly in Radarr/Sonarr).
+
+### Correcting regional series mismatches
+
+Regional Bigg Boss editions are separate series: [Bigg Boss Tamil](https://www.imdb.com/title/tt7084920/)
+uses `tt7084920`, while [Bigg Boss Telugu](https://www.imdb.com/title/tt7805494/) uses `tt7805494`.
+MediaFusion preserves an edition such as `(Tamil)` or `(Telugu)` in release titles when matching
+metadata. TMDB results whose title is just “Bigg Boss” are qualified using their original language.
+
+If an existing torrent has already been assigned to the wrong show, open its content detail page
+in MediaFusion and use the stream linking dialog. Choose **Replace Link**, select the correct
+series (or search by its IMDb ID), and provide the season/episode mapping when needed. Submit the
+correction; it is applied immediately if auto-approved, otherwise a moderator must approve it.
+Replacing a link removes the wrong association; adding another link leaves both associations.
+
+The IMDb attribute in MediaFusion's Torznab feed comes from those stored media links. Restarting
+or reinstalling the addon does not repair existing links. If another indexer's feed supplies the
+wrong IMDb attribute, that feed also needs correction at its source.

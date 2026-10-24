@@ -181,6 +181,9 @@ pub async fn search(
         }
 
         let title_str = m["name"].as_str().unwrap_or("").to_string();
+        if is_series && !crate::parser::series_identity::series_editions_match(title, &title_str) {
+            continue;
+        }
         let sim = crate::parser::similarity_ratio(title, &title_str);
         if sim < MIN_TITLE_SIMILARITY {
             continue;
