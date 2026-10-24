@@ -1,4 +1,5 @@
-//! Requires disposable TEST_DATABASE_URL and TEST_REDIS_URL services.
+//! Requires SECRET_KEY plus disposable TEST_DATABASE_URL and TEST_REDIS_URL services.
+//! SECRET_KEY only bootstraps AppConfig; this test overrides the signing/encryption keys.
 mod common;
 use axum::{
     Json, Router,

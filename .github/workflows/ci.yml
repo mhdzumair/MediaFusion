@@ -216,6 +216,15 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -262,4 +271,7 @@ jobs:
         env:
           SQLX_OFFLINE: "true"
           TEST_DATABASE_URL: postgresql://mediafusion:mediafusion@localhost:5432/mediafusion
+          TEST_REDIS_URL: redis://localhost:6379
+          # Test-only configuration bootstrap; never use a deployment secret here.
+          SECRET_KEY: mediafusion-ci-only-secret-not-for-deployment
         run: cargo test
