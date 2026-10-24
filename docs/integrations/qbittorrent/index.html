@@ -2004,6 +2004,16 @@
 <li>Adjust <strong>Play video after download</strong> (e.g. <code>30</code> = start playing when 30% is downloaded) and the <strong>download wait timeout</strong> in seconds if the torrent needs longer than 5 minutes to get there. Leave <strong>prioritize first and last pieces</strong> on unless you always wait for the entire file.</li>
 <li>Save the configuration</li>
 </ol>
+<p>Stored qBittorrent and WebDAV credentials are encrypted with the instance's
+<code>SECRET_KEY</code> and masked in configuration responses. On API or worker startup,
+existing profiles are backfilled into encrypted storage and their Redis profile
+caches are invalidated. Keep the same <code>SECRET_KEY</code> when upgrading; the backfill
+stops on unreadable encrypted secrets rather than overwriting them.</p>
+<p>Playback uses the configured download wait for qBittorrent, including waits longer
+than the general HTTP request timeout. The resolver and concurrent requests allow
+for metadata lookup and a retry as well. If you run MediaFusion behind a reverse
+proxy, its response timeout and the player's timeout must also allow the wait.
+Both qBittorrent 4.x paused torrents and 5.x stopped torrents resume automatically.</p>
 <div class="admonition tip">
 <p class="admonition-title">Playing before the download finishes</p>
 <p>Playback starts as soon as the threshold is reached, and the player reads the file over WebDAV while qBittorrent keeps writing to it. Two things make this usable: MediaFusion asks qBittorrent to download <strong>only the file you picked</strong>, so a season pack does not queue the whole run, and it enables <strong>prioritize first and last pieces</strong>, so the head of the file arrives before the middle.</p>
