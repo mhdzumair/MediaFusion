@@ -2500,6 +2500,11 @@
 <td>Hide torrent hashes, magnets and torrent-file data in non-admin JSON responses, including Stremio. Playback uses authenticated encrypted references. P2P-only streams and non-admin Torznab access are unavailable in this mode. Restart the API after changing this flag; purge any existing reverse-proxy response caches.</td>
 </tr>
 <tr>
+<td><code>HIDE_TORRENT_INFO_HASHES_RELAY</code></td>
+<td><code>true</code></td>
+<td>With hash privacy enabled, relay provider video URLs containing a hash. Set <code>false</code> to redirect to the provider URL instead (that final URL may reveal a hash). Each hash-bearing destination logs the provider and relay policy, without logging the URL/hash. Does not relax other response protections.</td>
+</tr>
+<tr>
 <td><code>DISABLED_PROVIDERS</code></td>
 <td><code>[]</code></td>
 <td>JSON array of provider names to remove from the Configure UI: <code>p2p</code>, <code>realdebrid</code>, <code>seedr</code>, <code>debridlink</code>, <code>alldebrid</code>, <code>offcloud</code>, <code>pikpak</code>, <code>torbox</code>, <code>premiumize</code>, <code>qbittorrent</code>, <code>stremthru</code>, <code>easydebrid</code>, <code>debrider</code>.</td>

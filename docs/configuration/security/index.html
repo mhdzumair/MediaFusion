@@ -2096,14 +2096,31 @@
 <p>Set <code>HIDE_TORRENT_INFO_HASHES=true</code> to remove info hashes, magnets, and torrent-file
 payloads from non-admin JSON responses, including Stremio, catalog streams, stream
 links, suggestions, personal streams, watch history, and import analysis. Hashes in
-filenames, descriptions, and behavior hints are redacted too. Authenticated admins
-retain access for administration; moderator responses are still protected.</p>
+filenames, descriptions, and behavior hints are redacted too, including hashes
+glued to other characters or percent-encoded in nested URLs. Template contexts
+are sanitized before user modifiers run, preventing reversible obfuscation of
+filenames. Response headers are checked for identifiers regardless of body type;
+unsafe filename/checksum headers are removed, and unsafe non-JSON text responses
+are refused. Authenticated admins retain access
+for administration only while their live database role remains admin and their
+account is active; moderator responses are still protected. Admin exports use the
+same live-role gate, and task SSE streams stop when access is revoked.</p>
 <p>Playback links use confidential, authenticated references bound to the profile and
 provider. The server restores the hash and original file selection internally.
 References remain valid until <code>SECRET_KEY</code> changes. If a provider's final download
 URL contains a hash, MediaFusion relays that video (including byte ranges) instead
-of exposing the URL in a redirect. This edge case uses the instance's bandwidth.
-P2P-only playback and non-admin Torznab access are unavailable in this mode.</p>
+of exposing the URL in a redirect. This edge case uses the instance's bandwidth
+and makes the debrid request from the server's IP. Upstream errors and textual
+responses are refused by the video relay.</p>
+<p><code>HIDE_TORRENT_INFO_HASHES_RELAY</code> defaults to <code>true</code>. Operators who accept exposing
+the final provider URL minted with the user's own key can set it to <code>false</code>.
+Playback then redirects to the provider even if that URL contains a hash, so the
+client connects directly using its own IP. This exception applies only to final
+provider playback redirects; JSON, templates, other headers, and other routes
+remain protected. An info log records <code>provider</code> and <code>relay</code> whenever this policy
+is applied, without including the URL or hash. Providers may redirect onward;
+this setting does not inspect those subsequent client-side redirects.</p>
+<p>P2P-only playback and non-admin Torznab access are unavailable in this mode.</p>
 <p>The web UI requests streams using a proxy-readable resource path:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/api/v1/stream/movie/tt0063350.json?profile_id=2&amp;profile_uuid=...&amp;provider=realdebrid
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>/api/v1/stream/series/tt0944947:1:2.json?profile_id=2&amp;profile_uuid=...&amp;provider=realdebrid
