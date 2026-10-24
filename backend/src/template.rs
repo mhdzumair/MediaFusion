@@ -540,7 +540,7 @@ fn apply_modifier(val: Value, name: &str, arg: Option<&str>) -> Value {
             let n: usize = arg.and_then(|a| a.parse().ok()).unwrap_or(50);
             let s = value_to_str(Some(&val));
             Value::String(if s.len() > n {
-                format!("{}...", &s[..n])
+                format!("{}...", &s[..s.floor_char_boundary(n)])
             } else {
                 s
             })
@@ -651,6 +651,26 @@ mod tests {
         let ctx = json!({"stream": {"audio_formats": ["AAC", "DTS"]}});
         let out = render("{stream.audio_formats|join('|')}", &ctx);
         assert_eq!(out, "AAC|DTS");
+    }
+
+    #[test]
+    fn truncate_respects_utf8_boundaries() {
+        for (title, limit, expected) in [
+            ("Пример.Видео", 3, "П..."),
+            ("Пример.Видео", 4, "Пр..."),
+            ("日本語の映画", 4, "日..."),
+            ("🎬Movie", 3, "..."),
+            ("🎬Movie", 4, "🎬..."),
+            ("title", 0, "..."),
+            ("title", 5, "title"),
+            ("title", 9, "title"),
+        ] {
+            let ctx = json!({"stream": {"name": title}});
+            assert_eq!(
+                render(&format!("{{stream.name|truncate({limit})}}"), &ctx),
+                expected
+            );
+        }
     }
 
     #[test]
