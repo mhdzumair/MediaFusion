@@ -45,6 +45,7 @@ import {
   Tv,
   X,
 } from 'lucide-react'
+import { StreamResolutionEditor } from './StreamResolutionEditor'
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
@@ -77,6 +78,8 @@ type ViewMode = 'full' | 'filename'
 type AnnotationMode = 'episode' | 'media'
 
 interface FileAnnotationDialogProps {
+  streamId?: number
+  currentResolution?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
   streamName: string
@@ -372,6 +375,8 @@ function MediaSearchPopover({
 }
 
 export function FileAnnotationDialog({
+  streamId,
+  currentResolution,
   open,
   onOpenChange,
   streamName,
@@ -656,6 +661,14 @@ export function FileAnnotationDialog({
             <span className="font-medium text-foreground break-all">{streamName}</span>
           </DialogDescription>
         </DialogHeader>
+
+        {streamId != null && (
+          <StreamResolutionEditor
+            key={`${streamId}:${currentResolution ?? ''}`}
+            streamId={streamId}
+            currentResolution={currentResolution}
+          />
+        )}
 
         {/* Toolbar */}
         <div className="px-6 py-3 border-b bg-muted/30 flex-shrink-0">

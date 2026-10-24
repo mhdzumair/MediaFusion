@@ -326,6 +326,14 @@ export function ContentImportPage() {
     setTorrentDialogOpen(true)
   }, [])
 
+  const handleSkipExistingTorrent = useCallback(() => {
+    if (!magnetLink && currentTorrentQueueIndex + 1 < torrentQueue.length) {
+      setCurrentTorrentQueueIndex((index) => index + 1)
+    } else {
+      resetTorrentDialogState()
+    }
+  }, [magnetLink, currentTorrentQueueIndex, torrentQueue.length, resetTorrentDialogState])
+
   // Hook for torrent file analysis
   const analyzeTorrent = useAnalyzeTorrent()
 
@@ -1058,6 +1066,7 @@ export function ContentImportPage() {
         queueItems={magnetLink ? undefined : queueItems}
         prefillData={queuePrefillData}
         onImport={handleTorrentImport}
+        onSkipExisting={handleSkipExistingTorrent}
         onReanalyze={handleReanalyze}
         isImporting={isImporting}
         initialContentType={selectedContentType}

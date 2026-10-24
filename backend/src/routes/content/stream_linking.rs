@@ -951,6 +951,7 @@ pub async fn get_stream_files_for_annotation(
 
         files.push(json!({
             "file_id": file_id,
+            "file_index": file_index,
             "file_name": display_name,
             "size": size,
             "season_number": season_number,

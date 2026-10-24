@@ -622,6 +622,63 @@ async fn resolve_dht_metadata(
     )
 }
 
+/// Return stored analysis immediately for duplicate imports, before provider
+/// searches or DHT resolution. Hidden streams disclose only the duplicate flag.
+pub async fn existing_torrent_analysis(
+    pool: &sqlx::PgPool,
+    info_hash: &str,
+    viewer: Option<UserId>,
+) -> Result<Option<serde_json::Value>, sqlx::Error> {
+    use crate::db::types::{ExistingTorrentAnalysisRow, ExistingTorrentFileRow};
+    let Some(row) = sqlx::query_as::<_, ExistingTorrentAnalysisRow>(
+        "SELECT s.id, s.name, ts.total_size, s.resolution, s.quality, s.codec, \
+         s.is_public, s.is_blocked, s.uploader_user_id FROM torrent_stream ts \
+         JOIN stream s ON s.id=ts.stream_id WHERE ts.info_hash=$1",
+    )
+    .bind(info_hash)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let visible = (row.is_public && !row.is_blocked)
+        || viewer.is_some_and(|id| Some(id) == row.uploader_user_id)
+        || if let Some(id) = viewer {
+            crate::db::get_user_role(pool, id.0)
+                .await
+                .is_some_and(crate::db::is_mod_or_admin)
+        } else {
+            false
+        };
+    if !visible {
+        return Ok(Some(json!({"status":"success", "already_exists":true,
+            "info_hash":info_hash, "files":[], "matches":[]})));
+    }
+    let files = sqlx::query_as::<_, ExistingTorrentFileRow>(
+        "SELECT sf.id AS file_id, sf.filename, sf.file_index AS index, \
+         COALESCE(sf.size,0) AS size, link.season_number, link.episode_number, \
+         link.media_id AS linked_media_id, link.title AS linked_media_title, \
+         link.type AS linked_media_type FROM stream_file sf \
+         LEFT JOIN LATERAL (SELECT fml.season_number, fml.episode_number, \
+             m.id AS media_id, m.title, m.type FROM file_media_link fml \
+             JOIN media m ON m.id=fml.media_id WHERE fml.file_id=sf.id \
+             ORDER BY fml.is_primary DESC, fml.id LIMIT 1) link ON TRUE \
+         WHERE sf.stream_id=$1 AND sf.file_index>=0 AND sf.filename<>'' ORDER BY sf.file_index",
+    )
+    .bind(row.id)
+    .fetch_all(pool)
+    .await?;
+    let attachments =
+        super::import_helpers::stream_media_attachment_details(pool, row.id.0, 100).await;
+    Ok(Some(json!({
+        "status":"success", "already_exists":true, "info_hash":info_hash,
+        "existing_stream_id":row.id, "torrent_name":row.name, "total_size":row.total_size,
+        "resolution":row.resolution, "quality":row.quality, "codec":row.codec,
+        "file_count":files.len(), "files":files, "matches":[],
+        "attached_media_count":attachments["count"], "attached_media":attachments["items"],
+    })))
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 pub async fn analyze_magnet(
@@ -664,12 +721,25 @@ pub async fn analyze_magnet(
         }
     };
 
-    let already_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)")
-            .bind(&info_hash)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap_or(false);
+    let already_exists = match existing_torrent_analysis(
+        &state.pool,
+        &info_hash,
+        UserId::from_auth_id(user_id),
+    )
+    .await
+    {
+        Ok(Some(analysis)) => {
+            if target_media_id.is_none() {
+                return Json(analysis).into_response();
+            }
+            true
+        }
+        Ok(None) => false,
+        Err(error) => {
+            tracing::warn!(%error, "torrent analysis: duplicate lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"detail":"Could not check whether this torrent already exists. Please retry."}))).into_response();
+        }
+    };
 
     let torrent_name = parser::extract_magnet_dn(&body.magnet_link)
         .or_else(|| body.title.clone())
@@ -899,12 +969,25 @@ pub async fn analyze_torrent(
     let mut file_count = files.len().max(1) as i32;
     let mut resolved_files: Option<serde_json::Value> = None;
 
-    let already_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)")
-            .bind(&info_hash)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap_or(false);
+    let already_exists = match existing_torrent_analysis(
+        &state.pool,
+        &info_hash,
+        UserId::from_auth_id(user_id),
+    )
+    .await
+    {
+        Ok(Some(analysis)) => {
+            if target_media_id.is_none() {
+                return Json(analysis).into_response();
+            }
+            true
+        }
+        Ok(None) => false,
+        Err(error) => {
+            tracing::warn!(%error, "torrent analysis: duplicate lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"detail":"Could not check whether this torrent already exists. Please retry."}))).into_response();
+        }
+    };
 
     // Adult content filter — block at analyze time so the UI never proceeds
     if is_adult_content(&name) {

@@ -31,6 +31,7 @@ import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
 import { ImportFileAnnotationDialog } from './ImportFileAnnotationDialog'
 import { ValidationWarningDialog } from './ValidationWarningDialog'
+import { ExistingTorrentDialog } from './ExistingTorrentDialog'
 import { MultiContentWizard } from './MultiContentWizard'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { ImageUrlInput } from '@/pages/MetadataCreator/components/ImageUrlInput'
@@ -60,6 +61,7 @@ interface TorrentImportDialogProps {
   magnetLink?: string // Not directly used in component but kept for parent context
   torrentFile?: File | null // Not directly used in component but kept for parent context
   onImport: (formData: TorrentImportFormData, options?: TorrentImportSubmitOptions) => Promise<ImportResponse>
+  onSkipExisting?: () => void
   onReanalyze?: (contentType: ContentType) => void
   isImporting?: boolean
   initialContentType?: ContentType // Content type selected before analysis
@@ -85,6 +87,7 @@ export function TorrentImportDialog({
   torrentFile: _torrentFile,
   onImport,
   onReanalyze,
+  onSkipExisting,
   isImporting = false,
   importMode = 'single',
   onImportModeChange,
@@ -202,7 +205,7 @@ export function TorrentImportDialog({
   }, [queueItems, currentIndex])
 
   // Initialize from analysis when dialog opens (during render, not in effect)
-  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevOpen, setPrevOpen] = useState(false)
   const [prevAnalysis, setPrevAnalysis] = useState(analysis)
   if (!open && prevOpen) {
     setPrevOpen(false)
@@ -574,6 +577,18 @@ export function TorrentImportDialog({
 
   if (!analysis) return null
 
+  if (analysis.already_exists && !targetMedia) {
+    return (
+      <ExistingTorrentDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        analysis={analysis}
+        onDone={onSkipExisting || (() => onOpenChange(false))}
+        doneLabel={typeof currentIndex === 'number' && currentIndex + 1 < totalItems ? 'Next torrent' : 'Done'}
+      />
+    )
+  }
+
   // If in multi-content mode, show the wizard instead
   if (isMultiContentMode) {
     return (
@@ -590,6 +605,8 @@ export function TorrentImportDialog({
           <MultiContentWizard
             analysis={analysis}
             importMode={importMode}
+            techSpecs={{ resolution, quality, codec, audio, hdr, languages }}
+            onTechSpecsChange={handleTechSpecChange}
             onComplete={handleMultiContentComplete}
             onCancel={() => onOpenChange(false)}
             isImporting={isImporting}

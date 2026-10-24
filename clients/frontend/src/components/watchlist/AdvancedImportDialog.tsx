@@ -185,11 +185,12 @@ export function AdvancedImportDialog({
   // Convert torrent files to TorrentFile format for annotation dialog
   const torrentFiles: TorrentFile[] = useMemo(() => {
     return torrent.files
+      .map((f, index) => ({ ...f, index }))
       .filter((f) => VIDEO_EXTENSIONS.some((ext) => f.path.toLowerCase().endsWith(ext)))
-      .map((f, idx) => ({
+      .map((f) => ({
         filename: f.path.split('/').pop() || f.path,
         size: f.size,
-        index: idx,
+        index: f.index,
         episode_title: f.episode_title,
       }))
   }, [torrent.files])

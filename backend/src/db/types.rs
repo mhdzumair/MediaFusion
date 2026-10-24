@@ -111,6 +111,32 @@ db_id!(
     ProfileId
 );
 
+#[derive(sqlx::FromRow)]
+pub struct ExistingTorrentAnalysisRow {
+    pub id: StreamId,
+    pub name: String,
+    pub total_size: Option<i64>,
+    pub resolution: Option<String>,
+    pub quality: Option<String>,
+    pub codec: Option<String>,
+    pub is_public: bool,
+    pub is_blocked: bool,
+    pub uploader_user_id: Option<UserId>,
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+pub struct ExistingTorrentFileRow {
+    pub file_id: StreamFileId,
+    pub filename: String,
+    pub index: i32,
+    pub size: i64,
+    pub season_number: Option<i32>,
+    pub episode_number: Option<i32>,
+    pub linked_media_id: Option<MediaId>,
+    pub linked_media_title: Option<String>,
+    pub linked_media_type: Option<MediaType>,
+}
+
 /// Physical torrent files and any episode mapping for the requested media.
 #[derive(sqlx::FromRow)]
 pub struct TorrentFileEpisodeRow {

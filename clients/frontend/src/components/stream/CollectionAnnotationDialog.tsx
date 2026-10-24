@@ -15,11 +15,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Loader2, Search, Film, Tv, X, Layers, FileVideo, CheckCircle2, Info } from 'lucide-react'
+import { StreamResolutionEditor } from './StreamResolutionEditor'
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
 import { useCreateStreamSuggestion } from '@/hooks/useStreamSuggestions'
 import { useToast } from '@/hooks/use-toast'
+import { useQuery } from '@tanstack/react-query'
+import { catalogApi } from '@/lib/api/catalog'
 import { userMetadataApi } from '@/lib/api'
 import { resolveExternalImportTarget, toImportedInternalResult } from './externalImport'
 
@@ -29,6 +32,9 @@ interface FileInfo {
   file_name: string
   size?: number | null
   file_index?: number
+  linked_media_id?: number | null
+  linked_media_title?: string | null
+  linked_media_type?: string | null
 }
 
 interface FileWithMedia extends FileInfo {
@@ -45,6 +51,7 @@ interface CollectionAnnotationDialogProps {
   onOpenChange: (open: boolean) => void
   streamId: number
   streamName: string
+  currentResolution?: string | null
   files: FileInfo[]
   isLoading?: boolean
   onSuccess?: () => void
@@ -129,7 +136,7 @@ function MediaSearchPopover({
   )
 
   // Sync initialQuery when popover opens (during render, not in effect)
-  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevOpen, setPrevOpen] = useState(false)
   if (open && !prevOpen && initialQuery && !searchQuery) {
     setPrevOpen(open)
     setSearchQuery(initialQuery)
@@ -328,6 +335,7 @@ export function CollectionAnnotationDialog({
   onOpenChange,
   streamId,
   streamName,
+  currentResolution,
   files,
   isLoading = false,
   onSuccess,
@@ -335,21 +343,52 @@ export function CollectionAnnotationDialog({
   const { toast } = useToast()
   const createSuggestion = useCreateStreamSuggestion()
 
-  // State
-  const [filesWithMedia, setFilesWithMedia] = useState<FileWithMedia[]>([])
+  const {
+    data: storedFiles,
+    isError: fileLookupFailed,
+    isFetching: loadingIndexes,
+    refetch: reloadFiles,
+  } = useQuery({
+    queryKey: ['collection-files', streamId],
+    queryFn: () => catalogApi.getStreamFiles(streamId),
+    enabled: open && files.some((file) => file.file_index == null),
+  })
+  // Resolve physical indexes separately so a background lookup cannot clear user selections.
+  const [selectedFiles, setFilesWithMedia] = useState<FileWithMedia[]>([])
+  const filesWithMedia = useMemo(
+    () =>
+      selectedFiles.map((file) => ({
+        ...file,
+        file_index:
+          file.file_index ?? storedFiles?.find((stored) => stored.file_id === file.file_id)?.file_index ?? undefined,
+      })),
+    [selectedFiles, storedFiles],
+  )
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Initialize files when dialog opens (during render, not in effect)
-  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevOpen, setPrevOpen] = useState(false)
   const [prevFiles, setPrevFiles] = useState(files)
+  if (!open && prevOpen) setPrevOpen(false)
   if (open && files.length > 0 && (open !== prevOpen || prevFiles !== files)) {
     setPrevOpen(open)
     setPrevFiles(files)
     const sorted = [...files].sort((a, b) =>
       a.file_name.localeCompare(b.file_name, undefined, { numeric: true, sensitivity: 'base' }),
     )
-    setFilesWithMedia(sorted.map((f) => ({ ...f, linkedMedia: null })))
+    setFilesWithMedia(
+      sorted.map((f) => ({
+        ...f,
+        linkedMedia: f.linked_media_id
+          ? {
+              id: f.linked_media_id,
+              title: f.linked_media_title || 'Linked media',
+              type: f.linked_media_type || 'movie',
+            }
+          : null,
+      })),
+    )
     setReason('')
   }
 
@@ -381,9 +420,19 @@ export function CollectionAnnotationDialog({
   // Count files with media assigned
   const assignedCount = useMemo(() => filesWithMedia.filter((f) => f.linkedMedia).length, [filesWithMedia])
 
+  const changedCount = filesWithMedia.filter(
+    (file) =>
+      file.linkedMedia &&
+      file.linkedMedia.id !== file.linked_media_id &&
+      file.file_index != null &&
+      file.file_index >= 0,
+  ).length
+
   // Submit suggestions
   const handleSubmit = useCallback(async () => {
-    const filesToSubmit = filesWithMedia.filter((f) => f.linkedMedia)
+    const filesToSubmit = filesWithMedia.filter(
+      (f) => f.linkedMedia && f.linkedMedia.id !== f.linked_media_id && f.file_index != null && f.file_index >= 0,
+    )
     if (filesToSubmit.length === 0) return
 
     setIsSubmitting(true)
@@ -448,6 +497,24 @@ export function CollectionAnnotationDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <StreamResolutionEditor
+          key={`${streamId}:${currentResolution ?? ''}`}
+          streamId={streamId}
+          currentResolution={currentResolution}
+        />
+        {loadingIndexes && (
+          <p role="status" className="px-6 text-sm text-muted-foreground">
+            Loading torrent file indexes...
+          </p>
+        )}
+        {fileLookupFailed && (
+          <div role="alert" className="px-6 text-sm text-destructive">
+            Could not load torrent file indexes.{' '}
+            <Button variant="link" onClick={() => void reloadFiles()}>
+              Retry
+            </Button>
+          </div>
+        )}
         {/* Info */}
         <div className="px-6 py-2 bg-blue-500/5 border-b flex-shrink-0">
           <div className="flex items-start gap-2 text-xs text-blue-400">
@@ -550,9 +617,9 @@ export function CollectionAnnotationDialog({
         <DialogFooter className="px-6 py-4 border-t bg-muted/30 flex-shrink-0">
           <div className="flex items-center justify-between w-full">
             <div className="text-sm text-muted-foreground">
-              {assignedCount > 0 ? (
+              {changedCount > 0 ? (
                 <span className="text-blue-500 font-medium">
-                  {assignedCount} file{assignedCount !== 1 ? 's' : ''} to link
+                  {changedCount} file{changedCount !== 1 ? 's' : ''} to link
                 </span>
               ) : (
                 'Assign files to media'
@@ -564,7 +631,7 @@ export function CollectionAnnotationDialog({
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={assignedCount === 0 || isSubmitting || isLoading}
+                disabled={changedCount === 0 || isSubmitting || isLoading}
                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500"
               >
                 {isSubmitting ? (
@@ -575,7 +642,7 @@ export function CollectionAnnotationDialog({
                 ) : (
                   <>
                     <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Submit {assignedCount} Suggestion{assignedCount !== 1 ? 's' : ''}
+                    Submit {changedCount} Suggestion{changedCount !== 1 ? 's' : ''}
                   </>
                 )}
               </Button>

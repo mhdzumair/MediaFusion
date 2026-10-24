@@ -1269,6 +1269,8 @@ function StreamActionDialog({
         <FileAnnotationDialog
           open={fileAnnotationOpen}
           onOpenChange={setFileAnnotationOpen}
+          streamId={stream.id}
+          currentResolution={stream.resolution}
           streamName={stream.stream_name || stream.name}
           initialFiles={fileLinks}
           onSave={handleSaveFileLinks}
@@ -1282,11 +1284,12 @@ function StreamActionDialog({
           open={collectionAnnotationOpen}
           onOpenChange={setCollectionAnnotationOpen}
           streamId={stream.id!}
+          currentResolution={stream.resolution}
           streamName={stream.stream_name || stream.name}
           files={stream.episode_links.map((el) => ({
             file_id: el.file_id,
             file_name: el.file_name,
-            file_index: el.file_id, // Use file_id as index if not provided
+            file_index: undefined, // File IDs are not physical torrent indexes.
           }))}
         />
       )}

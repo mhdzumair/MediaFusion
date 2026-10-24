@@ -477,6 +477,7 @@ export function AnnotationRequestsTab() {
           ]
             .filter(Boolean)
             .join(' • ')})`}
+          streamId={selectedStream.streamId}
           initialFiles={annotationFiles}
           onSave={handleSaveAnnotation}
           onSaveMediaLinks={handleSaveMediaLinks}

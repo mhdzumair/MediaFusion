@@ -1,6 +1,10 @@
 import { apiClient } from './client'
 
 export interface TorrentFile {
+  file_id?: number
+  linked_media_id?: number | null
+  linked_media_title?: string | null
+  linked_media_type?: 'movie' | 'series' | 'tv' | null
   filename: string
   size: number
   index: number
@@ -36,6 +40,10 @@ export interface TorrentMatch {
 }
 
 export interface TorrentAnalyzeResponse {
+  already_exists?: boolean
+  existing_stream_id?: number
+  attached_media_count?: number
+  attached_media?: Array<{ media_id: number; title: string; year?: number; type: string; external_id?: string }>
   status: 'success' | 'error' | 'needs_annotation' | 'validation_failed'
   info_hash?: string
   torrent_name?: string

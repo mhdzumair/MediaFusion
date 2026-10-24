@@ -30,6 +30,9 @@ import { fetchCombinedMatchByProviderId } from '../utils/importMetaLookup'
 import type { TorrentAnalyzeResponse } from '@/lib/api'
 import type { FileAnnotation } from './types'
 import type { ImportMode } from '@/lib/constants'
+import { collectionFiles } from '../utils/collectionFiles'
+import { TechSpecsEditor } from './TechSpecsEditor'
+import type { TorrentImportFormData } from './types'
 
 // Provider options for manual ID input
 const PROVIDER_OPTIONS: { value: ImportProvider; label: string; placeholder: string; example: string }[] = [
@@ -48,6 +51,8 @@ interface MultiContentWizardProps {
   onComplete: (annotations: FileAnnotation[]) => void
   onCancel: () => void
   isImporting?: boolean
+  techSpecs?: Pick<TorrentImportFormData, 'resolution' | 'quality' | 'codec' | 'audio' | 'hdr' | 'languages'>
+  onTechSpecsChange?: (field: string, value: string | string[] | undefined) => void
 }
 
 // Format file size
@@ -548,33 +553,19 @@ export function MultiContentWizard({
   onComplete,
   onCancel,
   isImporting = false,
+  techSpecs,
+  onTechSpecsChange,
 }: MultiContentWizardProps) {
   const [currentStep, setCurrentStep] = useState<WizardStep>('files')
-  const [files, setFiles] = useState<FileWithMetadata[]>([])
+  const [files, setFiles] = useState<FileWithMetadata[]>(() => collectionFiles(analysis))
   const [activeFileIndex, setActiveFileIndex] = useState(0)
-
-  // Determine metadata type based on import mode
   const metaType = importMode === 'collection' ? 'movie' : 'series'
-
-  // Initialize files from analysis (during render, not in effect)
   const [prevAnalysis, setPrevAnalysis] = useState(analysis)
-  if (analysis?.files && prevAnalysis !== analysis) {
+  if (prevAnalysis !== analysis) {
     setPrevAnalysis(analysis)
-    const videoFiles = analysis.files
-      .filter((f) => /\.(mkv|mp4|avi|mov|wmv|m4v|webm)$/i.test(f.filename))
-      .sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true }))
-
-    setFiles(
-      videoFiles.map((f, idx) => ({
-        filename: f.filename,
-        size: f.size,
-        index: f.index ?? idx,
-        season_number: null,
-        episode_number: null,
-        included: true,
-        searchQuery: parseFilenameForSearch(f.filename),
-      })),
-    )
+    setFiles(collectionFiles(analysis))
+    setCurrentStep('files')
+    setActiveFileIndex(0)
   }
 
   // Handle metadata selection for a file
@@ -696,6 +687,18 @@ export function MultiContentWizard({
                 {files.length} video file{files.length !== 1 ? 's' : ''} detected in this torrent
               </p>
             </div>
+            {onTechSpecsChange && (
+              <div className="mb-4 space-y-2">
+                <p className="text-sm font-medium">Torrent technical specifications</p>
+                <p className="text-xs text-muted-foreground">These settings apply to all files in this torrent.</p>
+                <TechSpecsEditor {...techSpecs} onChange={onTechSpecsChange} />
+              </div>
+            )}
+            {files.length === 0 && (
+              <p role="status" className="text-sm text-muted-foreground">
+                No video files were resolved. Analyze again with file resolution enabled, or upload the .torrent file.
+              </p>
+            )}
             <ScrollArea className="flex-1 min-h-0">
               <div className="space-y-2 pr-4">
                 {files.map((file, index) => (

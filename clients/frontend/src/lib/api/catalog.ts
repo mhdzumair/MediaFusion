@@ -350,6 +350,7 @@ export const catalogApi = {
 
 // Additional types for stream files
 export interface StreamFileInfo {
+  file_index?: number | null
   file_id: number
   file_name: string
   size: number | null // File size in bytes

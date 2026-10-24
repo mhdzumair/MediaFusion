@@ -346,6 +346,8 @@ export function StreamCard({
       <FileAnnotationDialog
         open={annotationDialogOpen}
         onOpenChange={setAnnotationDialogOpen}
+        streamId={stream.id}
+        currentResolution={stream.resolution}
         streamName={stream.name}
         initialFiles={annotationFiles}
         onSave={handleSaveAnnotation}
