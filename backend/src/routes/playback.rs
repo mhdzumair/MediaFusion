@@ -225,11 +225,43 @@ async fn dispatch(
         }
     };
 
+    resolved_playback_response(
+        &state,
+        method,
+        video_url,
+        &headers,
+        &info_hash,
+        &provider_name,
+    )
+    .await
+}
+
+/// Apply the privacy policy only after resolving a provider-owned destination.
+pub async fn resolved_playback_response(
+    state: &AppState,
+    method: Method,
+    video_url: String,
+    headers: &HeaderMap,
+    info_hash: &str,
+    provider: &str,
+) -> Response {
     if state.config.hide_torrent_info_hashes
         && (crate::torrent_privacy_middleware::contains_hash(&video_url)
-            || video_url.to_ascii_lowercase().contains(&info_hash))
+            || video_url.to_ascii_lowercase().contains(info_hash))
     {
-        return private_video_response(&state.debrid_http, method, &video_url, &headers).await;
+        tracing::info!(
+            provider,
+            relay = state.config.hide_torrent_info_hashes_relay,
+            "hash-bearing provider destination: playback relay policy applied"
+        );
+        if state.config.hide_torrent_info_hashes_relay {
+            return private_video_response(&state.debrid_http, method, &video_url, headers).await;
+        }
+        let mut response = playback_redirect(method, video_url);
+        response
+            .extensions_mut()
+            .insert(crate::torrent_privacy_middleware::AllowProviderRedirect);
+        return response;
     }
     playback_redirect(method, video_url)
 }
@@ -253,7 +285,15 @@ pub async fn private_video_response(
     let Ok(upstream) = request.send().await else {
         return StatusCode::BAD_GATEWAY.into_response();
     };
-    if upstream.status().is_redirection() {
+    // Provider/CDN error pages can echo the original URL or filename. Never
+    // stream textual responses or upstream errors through the video relay.
+    if !upstream.status().is_success()
+        || upstream
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(crate::torrent_privacy_middleware::textual_content_type)
+    {
         return StatusCode::BAD_GATEWAY.into_response();
     }
     let mut response = Response::builder()

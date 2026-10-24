@@ -34,7 +34,10 @@ pub async fn run_vacuum(
     State(state): State<Arc<AppState>>,
     body: Option<Json<MaintenanceRequest>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -118,7 +121,10 @@ pub async fn run_analyze(
     State(state): State<Arc<AppState>>,
     body: Option<Json<MaintenanceRequest>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -182,7 +188,10 @@ pub async fn run_reindex(
     State(state): State<Arc<AppState>>,
     body: Option<Json<MaintenanceRequest>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -253,7 +262,10 @@ pub async fn get_bloat_stats(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -293,7 +305,10 @@ pub async fn list_indexes(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -335,7 +350,10 @@ pub async fn rebuild_indexes(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RebuildIndexRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 

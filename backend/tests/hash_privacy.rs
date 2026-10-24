@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     body::{Body, to_bytes},
     http::{Request, StatusCode},
-    routing::get,
+    routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, KeyInit, Mac};
@@ -44,6 +44,42 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/stream/{catalog_type}/{video_id}", get(catalog_browse::get_resource_streams))
         .route("/api/v1/catalog/{catalog_type}/{media_id}/streams", get(catalog_browse::get_media_streams))
         .route("/secondary", get(||async { Json(json!({"info_hash":HASH,"nested":{"description":format!("file_{HASH}.mkv"),"infoHash":HASH,"torrent_file":"base64"}})) }))
+        .route("/api/v1/stream-links/stream/{stream_id}/files", get(mediafusion_api::routes::content::stream_linking::get_stream_files_for_annotation))
+        .route("/api/v1/admin/db/tables/{table}/export",get(mediafusion_api::routes::admin_db::import_export::export_table))
+        .route("/api/v1/admin/tasks/stream",get(mediafusion_api::routes::admin_scrapers::stream_task_snapshots))
+        .route("/api/v1/admin/tasks/{task_id}/stream",get(mediafusion_api::routes::admin_scrapers::stream_task_detail))
+        .route("/api/v1/watchlist/providers",get(||async {Json(json!({"ok":true}))}))
+        .route("/api/v1/watchlist/realdebrid",get(||async {Json(json!({"ok":true}))}))
+        .route("/api/v1/watchlist/realdebrid/missing",get(||async {Json(json!({"ok":true}))}))
+        .route("/api/v1/watchlist/refs",post(|Json(value):Json<Value>|async move {
+            assert_eq!(value["hash"], HASH);
+            Json(json!({"ok":true}))
+        }))
+        .route("/signed-token",get(||async {Json(json!({"access_token":token(1,"user")}))}))
+        .route("/text/{kind}",get(|axum::extract::Path(kind):axum::extract::Path<String>|async move {
+            use axum::http::header;
+            use axum::response::IntoResponse;
+            let content_type = match kind.as_str() { "html"=>"text/html", "xml"=>"application/problem+xml", "csv"=>"text/csv", _=>"text/plain" };
+            ([(header::CONTENT_TYPE, content_type)],format!("prefix{HASH}suffix")).into_response()
+        }))
+        .route("/header",get(||async {
+            axum::http::Response::builder().header("Content-Type","application/octet-stream")
+                .header("Content-Disposition",format!("attachment; filename=prefix{HASH}suffix.nzb"))
+                .header("X-Stream-Name",HASH.bytes().map(|b|format!("%{b:02x}")).collect::<String>())
+                .body(Body::from("bytes")).unwrap()
+        }))
+        .route("/unsafe-redirect",get(||async {
+            let encoded:String=HASH.bytes().map(|b|format!("%{b:02x}")).collect();
+            axum::http::Response::builder().status(StatusCode::FOUND)
+                .header("Location",format!("https://example.test/?d={}",urlencoding::encode(&encoded)))
+                .body(Body::empty()).unwrap()
+        }))
+        .route("/resolved-provider",get(|axum::extract::State(state):axum::extract::State<Arc<AppState>>, headers:axum::http::HeaderMap|async move {
+            let url=headers.get("x-test-destination").and_then(|v|v.to_str().ok()).map(str::to_owned)
+                .unwrap_or_else(||format!("https://example.test/video/{HASH}.mkv"));
+            playback::resolved_playback_response(&state, axum::http::Method::GET,
+                url, &headers, HASH,"test-provider").await
+        }))
         .route("/torznab",get(|| async { "magnet XML" }))
         .route("/streaming_provider/{secret_str}/playback/{provider_name}/{info_hash}",get(playback::handler_base))
         .layer(axum::middleware::from_fn_with_state(state.clone(), torrent_privacy_middleware))
@@ -78,13 +114,13 @@ async fn stream_resource_and_privacy_contract() {
     let user: i32=sqlx::query_scalar("INSERT INTO users (uuid,email,username,role,is_verified,is_active,contribution_points,metadata_edits_approved,stream_edits_approved,contribution_level,contribute_anonymously,uploads_restricted,created_at) VALUES ('privacy-test','privacy-test@example.test','privacy-test',$1,true,true,0,0,0,'new',false,false,NOW()) RETURNING id")
         .bind(UserRole::User).fetch_one(pool).await.unwrap();
     let profile: i32=sqlx::query_scalar("INSERT INTO user_profiles (uuid,user_id,name,config,is_default,created_at) VALUES ('privacy-profile',$1,'privacy',$2,true,NOW()) RETURNING id")
-        .bind(user).bind(json!({"sps":[{"sv":"realdebrid","en":true}],"mfc":{"pu":"https://mf.example.test","ap":"test","ewp":true}})).fetch_one(pool).await.unwrap();
+        .bind(user).bind(json!({"sps":[{"sv":"realdebrid","en":true}],"mfc":{"pu":"https://mf.example.test","ap":"test","ewp":true},"st":{"title":"{stream.name|replace('', '-')}","description":"{stream.filename|replace('', '-')}"}})).fetch_one(pool).await.unwrap();
     let media: i32=sqlx::query_scalar("INSERT INTO media (type,title,adult,is_blocked,is_public,is_user_created,total_streams,nudity_status,created_at) VALUES ($1,'Privacy regression movie',false,false,true,false,0,'UNKNOWN',NOW()) RETURNING id")
         .bind(MediaType::Movie).fetch_one(pool).await.unwrap();
     sqlx::query("INSERT INTO media_external_id (media_id,provider,external_id,created_at) VALUES ($1,'imdb','tt0063350',NOW()),($1,'kitsu','987654321',NOW())").bind(media).execute(pool).await.unwrap();
     let torrent = TorrentStoreInput {
         base: StreamStoreBase {
-            name: format!("Movie_{HASH}.mkv"),
+            name: format!("prefix{HASH}suffix.mkv"),
             source: "test".into(),
             ..Default::default()
         },
@@ -94,7 +130,13 @@ async fn stream_resource_and_privacy_contract() {
         torrent_type: TorrentType::Public,
         torrent_file: None,
         announce_list: vec![],
-        files: vec![],
+        files: vec![db::StreamFileStoreInput {
+            file_index: 0,
+            filename: format!("prefix{HASH}suffix.mkv"),
+            size: Some(2000),
+            season_number: 0,
+            episode_number: 0,
+        }],
     };
     let stream = db::store_torrent_stream(
         pool,
@@ -104,6 +146,9 @@ async fn stream_resource_and_privacy_contract() {
     .await
     .unwrap()
     .stream_id();
+    db::upsert_stream_file_row(pool, stream, &torrent.files[0])
+        .await
+        .unwrap();
     let mut config = AppConfig::from_env();
     config.postgres_uri = std::env::var("TEST_DATABASE_URL").unwrap();
     config.postgres_ro_uri = None;
@@ -115,9 +160,10 @@ async fn stream_resource_and_privacy_contract() {
     config.poster_nsfw_enabled = false;
     config.requests_proxy_url = None;
     config.hide_torrent_info_hashes = true;
+    config.hide_torrent_info_hashes_relay = true;
     config.disabled_providers = vec!["p2p".into()];
     let state = AppState::build(config.clone()).await.unwrap();
-    let private = router(state);
+    let private = router(state.clone());
     let user_token = token(user, "user");
     let query = format!("?profile_id={profile}&profile_uuid=privacy-profile&provider=realdebrid");
     assert_eq!(
@@ -139,6 +185,10 @@ async fn stream_resource_and_privacy_contract() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(streams["streams"].as_array().unwrap().len(), 1);
     assert!(!streams.to_string().contains(HASH));
+    assert!(
+        !streams.to_string().replace('-', "").contains(HASH),
+        "template context must be scrubbed before replace"
+    );
     assert!(streams["streams"][0].get("info_hash").is_none());
     assert!(streams["streams"][0].get("browser_url").is_none());
     assert_eq!(
@@ -166,6 +216,191 @@ async fn stream_resource_and_privacy_contract() {
         .await
         .0,
         StatusCode::NOT_FOUND
+    );
+    let (status, files) = request(
+        &private,
+        &format!("/api/v1/stream-links/stream/{}/files", stream.0),
+        Some(&user_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!files.to_string().contains(HASH));
+    for path in [
+        "/api/v1/watchlist/providers",
+        "/api/v1/watchlist/realdebrid",
+        "/api/v1/watchlist/realdebrid/missing",
+    ] {
+        let response = private
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {user_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+    }
+    let operation = mediafusion_api::crypto::torrent_ref::seal(
+        &mediafusion_api::crypto::torrent_ref::TorrentRef {
+            hash: HASH.into(),
+            filename: None,
+            season: None,
+            episode: None,
+            scope: format!("api:{user}"),
+        },
+        &config.secret_key,
+    )
+    .unwrap();
+    let response = private
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/watchlist/refs")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {user_token}"))
+                .body(Body::from(json!({"hash":operation}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let (_, signed) = request(&private, "/signed-token", Some(&user_token)).await;
+    let mut signed_headers = axum::http::HeaderMap::new();
+    signed_headers.insert(
+        "authorization",
+        format!("Bearer {}", signed["access_token"].as_str().unwrap())
+            .parse()
+            .unwrap(),
+    );
+    assert_eq!(
+        mediafusion_api::routes::auth_guard::decode_access_token(&signed_headers, SECRET),
+        Ok((1, "user".into())),
+        "hash-looking signatures must still authenticate"
+    );
+    for path in [
+        "/text/html",
+        "/text/xml",
+        "/text/csv",
+        "/text/plain",
+        "/unsafe-redirect",
+    ] {
+        assert_eq!(
+            request(&private, path, Some(&user_token)).await.0,
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+    }
+    let response = private
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/header")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get("content-disposition").is_none());
+    assert!(response.headers().get("x-stream-name").is_none());
+    assert_eq!(to_bytes(response.into_body(), 1024).await.unwrap(), "bytes");
+    let upstream = Router::new().route(
+        "/video/{name}",
+        get(|| async {
+            (
+                [(axum::http::header::CONTENT_TYPE, "video/mp4")],
+                "video-bytes",
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let destination = format!("http://{}/video/{HASH}.mkv", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, upstream).await.unwrap();
+    });
+    let relayed = private
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/resolved-provider")
+                .header("x-test-destination", &destination)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(relayed.status(), StatusCode::OK);
+    assert!(relayed.headers().get("location").is_none());
+    assert_eq!(
+        to_bytes(relayed.into_body(), 1024).await.unwrap(),
+        "video-bytes"
+    );
+    server.abort();
+    let mut no_relay = config.clone();
+    no_relay.hide_torrent_info_hashes_relay = false;
+    let redirecting = router(AppState::build(no_relay).await.unwrap());
+    let response = redirecting
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/resolved-provider")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FOUND);
+    assert_eq!(
+        response.headers()["location"],
+        format!("https://example.test/video/{HASH}.mkv")
+    );
+    assert_eq!(
+        request(&redirecting, "/unsafe-redirect", None).await.0,
+        StatusCode::FORBIDDEN,
+        "relay opt-out must not disable unrelated response protection"
+    );
+    for path in [
+        "/api/v1/admin/db/tables/torrent_stream/export?format=csv",
+        "/api/v1/admin/tasks/stream",
+        "/api/v1/admin/tasks/1/stream",
+    ] {
+        assert_eq!(
+            request(&private, path, Some(&token(user, "admin"))).await.0,
+            StatusCode::FORBIDDEN,
+            "stale admin: {path}"
+        );
+    }
+    // Role enforcement must also work independently of privacy middleware.
+    let unwrapped = Router::new()
+        .route(
+            "/export/{table}",
+            get(mediafusion_api::routes::admin_db::import_export::export_table),
+        )
+        .route(
+            "/tasks",
+            get(mediafusion_api::routes::admin_scrapers::stream_task_snapshots),
+        )
+        .with_state(state.clone());
+    assert_eq!(
+        request(
+            &unwrapped,
+            "/export/torrent_stream?format=csv",
+            Some(&token(user, "admin"))
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        request(&unwrapped, "/tasks", Some(&token(user, "admin")))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
     );
     let mut disabled_config = config.clone();
     disabled_config.disabled_providers.push("realdebrid".into());
@@ -226,6 +461,51 @@ async fn stream_resource_and_privacy_contract() {
         .unwrap();
     let (_, admin) = request(&private, "/secondary", Some(&token(user, "admin"))).await;
     assert_eq!(admin["info_hash"], HASH);
+    let export = private
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/admin/db/tables/torrent_stream/export?format=csv")
+                .header("authorization", format!("Bearer {}", token(user, "admin")))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(export.status(), StatusCode::OK);
+    let csv = to_bytes(export.into_body(), 32 * 1024 * 1024)
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&csv).contains(HASH));
+    use futures::StreamExt;
+    let events = private
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/admin/tasks/stream?interval_ms=1000")
+                .header("authorization", format!("Bearer {}", token(user, "admin")))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(events.status(), StatusCode::OK);
+    let mut body = events.into_body().into_data_stream();
+    assert!(body.next().await.is_some());
+    sqlx::query("UPDATE users SET role=$2 WHERE id=$1")
+        .bind(user)
+        .bind(UserRole::User)
+        .execute(pool)
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(3), body.next())
+            .await
+            .unwrap()
+            .is_none(),
+        "an already-open SSE stream must stop after demotion"
+    );
+
     // Provider restrictions apply even with the privacy flag disabled.
     config.hide_torrent_info_hashes = false;
     let public = router(AppState::build(config).await.unwrap());
@@ -286,6 +566,26 @@ async fn hash_bearing_video_destinations_preserve_ranges_without_exposing_redire
                 .into_response()
         }),
     );
+    let upstream = upstream
+        .route(
+            "/error",
+            get(|| async {
+                (
+                    StatusCode::FORBIDDEN,
+                    [(header::CONTENT_TYPE, "text/html")],
+                    format!("error for {HASH}"),
+                )
+            }),
+        )
+        .route(
+            "/xml",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/xml")],
+                    format!("<error>{HASH}</error>"),
+                )
+            }),
+        );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/video", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
@@ -317,6 +617,16 @@ async fn hash_bearing_video_destinations_preserve_ranges_without_exposing_redire
             } else {
                 b"bcd".as_slice()
             }
+        );
+    }
+    for path in ["/error", "/xml"] {
+        let error_url = url.replace("/video", path);
+        let response =
+            playback::private_video_response(&http, Method::GET, &error_url, &headers).await;
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert!(
+            !String::from_utf8_lossy(&to_bytes(response.into_body(), 1024).await.unwrap())
+                .contains(HASH)
         );
     }
     server.abort();

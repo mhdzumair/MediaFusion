@@ -30,7 +30,10 @@ pub async fn export_table(
     Path(table): Path<String>,
     Query(params): Query<ExportQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -242,7 +245,10 @@ pub async fn import_preview(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -354,7 +360,10 @@ pub async fn import_execute(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 

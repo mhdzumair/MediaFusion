@@ -38,12 +38,8 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
-use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::Sha256;
 
 use crate::state::AppState;
 
@@ -51,39 +47,14 @@ use filters::{build_where, quote_ident};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
-pub fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    if data["role"].as_str() != Some("admin") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
+pub async fn validate_admin(
+    pool: &sqlx::PgPool,
+    headers: &HeaderMap,
+    secret_key: &str,
+) -> Option<i32> {
+    crate::routes::auth_guard::require_active_role(pool, headers, secret_key, &["admin"])
+        .await
+        .ok()
 }
 
 pub fn forbidden() -> axum::response::Response {
@@ -131,7 +102,10 @@ pub async fn get_table_schema(
     State(state): State<Arc<AppState>>,
     Path(table_name): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -306,7 +280,10 @@ pub async fn get_table_data(
     Path(table_name): Path<String>,
     Query(params): Query<TableDataQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -473,7 +450,10 @@ pub async fn delete_table_rows(
     Path(table_name): Path<String>,
     Json(body): Json<DeleteRowsRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -539,7 +519,10 @@ pub async fn get_slow_queries(
     State(state): State<Arc<AppState>>,
     Query(params): Query<SlowQueriesQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -678,7 +661,10 @@ pub async fn reset_slow_queries(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let ext_installed: bool = sqlx::query_scalar(

@@ -3566,6 +3566,10 @@ pub async fn stream_task_snapshots(
 
     let stream = stream! {
         loop {
+            // Revoke already-open streams when an admin is demoted/deactivated.
+            if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+                break;
+            }
             let snapshot = build_task_stream_snapshot(&state.pool_ro, &params).await;
             {
                 let sse_event = Event::default().event("snapshot").json_data(snapshot);
@@ -3682,6 +3686,10 @@ pub async fn stream_scheduler_snapshots(
 
     let stream = stream! {
         loop {
+            // Revoke already-open streams when an admin is demoted/deactivated.
+            if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+                break;
+            }
             let snapshot = build_scheduler_stream_snapshot(
                 &state.pool_ro,
                 state.config.disable_all_scheduler,
@@ -3987,6 +3995,10 @@ pub async fn stream_task_detail(
 
     let stream = stream! {
         loop {
+            // Revoke already-open streams when an admin is demoted/deactivated.
+            if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+                break;
+            }
             match load_task_detail_json(&state.pool_ro, &task_id).await {
                 Some(detail) => {
                     let status = detail["status"].as_str().unwrap_or("").to_string();
@@ -3998,6 +4010,9 @@ pub async fn stream_task_detail(
                     }
                     if TERMINAL_TASK_STATUSES.contains(&status.as_str()) {
                         tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+                        if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+                            break;
+                        }
                         if let Some(final_detail) =
                             load_task_detail_json(&state.pool_ro, &task_id).await
                         {

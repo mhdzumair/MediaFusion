@@ -21,6 +21,10 @@ pub fn render(template: &str, context: &Value) -> String {
     if template.len() > MAX_TEMPLATE_LEN {
         return String::new();
     }
+    // Sanitize the input, not only the rendered string: replace/join and other
+    // modifiers can otherwise turn a hash into a reversible obfuscation.
+    let private_context = crate::torrent_privacy_middleware::private_template_context(context);
+    let context = private_context.as_ref().unwrap_or(context);
     let nodes = parse(template, 0);
     let raw = render_nodes(&nodes, context, 0);
     // Remove blank lines (mirrors Python's cleaned_lines logic)

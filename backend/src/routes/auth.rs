@@ -146,7 +146,7 @@ fn create_token(payload: serde_json::Value, secret_key: &str) -> String {
     format!("{payload_str}.{signature}")
 }
 
-fn decode_token(token: &str, secret_key: &str) -> Option<serde_json::Value> {
+pub(crate) fn decode_token(token: &str, secret_key: &str) -> Option<serde_json::Value> {
     let dot = token.rfind('.')?;
     let (payload_str, sig) = token.split_at(dot);
     let sig = &sig[1..]; // remove leading '.'

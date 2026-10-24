@@ -119,7 +119,7 @@ pub fn require_role(
     }
 }
 
-/// Role gate with live `is_active` DB check (mirrors Python `require_auth`).
+/// Role gate requiring both the token claim and live database role, plus an active account.
 pub async fn require_active_role(
     pool: &PgPool,
     headers: &HeaderMap,
@@ -132,6 +132,12 @@ pub async fn require_active_role(
     }
     if !user_is_active(pool, user_id).await? {
         return Err(AuthFailure::Unauthorized);
+    }
+    let live_role = crate::db::get_user_role(pool, user_id)
+        .await
+        .ok_or(AuthFailure::Forbidden)?;
+    if !allowed.iter().any(|r| *r == live_role.as_api_wire()) {
+        return Err(AuthFailure::Forbidden);
     }
     Ok(user_id)
 }

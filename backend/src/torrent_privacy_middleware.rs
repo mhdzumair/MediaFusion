@@ -17,26 +17,81 @@ use std::{
 };
 
 const MAX_JSON: usize = 32 * 1024 * 1024;
-static HASH: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"(?i)[a-f0-9]{40}|[a-z2-7]{32}").unwrap());
+static HEX_HASH: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)[a-f0-9]{40,}").unwrap());
+static BASE32_HASH: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)[a-z2-7]{32,}").unwrap());
+
+// The scope covers handler execution, so every template renderer sees the same
+// policy before user-controlled modifiers run. It is request-local, not global.
+tokio::task_local! {
+    static PRIVACY_CONTEXT: PrivacyContext;
+}
+
+struct PrivacyContext {
+    key: [u8; 32],
+    auth_key: String,
+}
+
+pub(crate) fn private_template_context(value: &Value) -> Option<Value> {
+    PRIVACY_CONTEXT
+        .try_with(|context| {
+            let mut value = value.clone();
+            sanitize_with_policy(&mut value, &context.key, "template", false);
+            value
+        })
+        .ok()
+}
+
+// Only handlers minting a final provider destination may opt out of Location
+// filtering. A request/header/query parameter cannot create this extension.
+#[derive(Clone, Copy)]
+pub(crate) struct AllowProviderRedirect;
+
+static AUTHENTICATED_TOKEN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"T-[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Za-z0-9_-]+=*\.[a-fA-F0-9]{64}")
+        .unwrap()
+});
 
 fn hash_ranges(text: &str) -> impl Iterator<Item = std::ops::Range<usize>> + '_ {
-    HASH.find_iter(text)
-        .filter(|m| {
-            !text[..m.start()]
-                .bytes()
-                .next_back()
-                .is_some_and(|c| c.is_ascii_alphanumeric())
-                && !text[m.end()..]
-                    .bytes()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_alphanumeric())
-        })
+    // Scan both alphabets independently and merge overlapping runs. A base32
+    // prefix must not consume the start of a hexadecimal hash and leave its
+    // suffix visible. Redact entire runs rather than arbitrary 32/40-byte chunks.
+    let mut ranges: Vec<_> = HEX_HASH
+        .find_iter(text)
+        .chain(BASE32_HASH.find_iter(text))
         .map(|m| m.range())
+        .collect();
+    ranges.sort_unstable_by_key(|r| r.start);
+    let mut merged: Vec<std::ops::Range<usize>> = Vec::new();
+    for range in ranges {
+        if let Some(last) = merged.last_mut()
+            && range.start <= last.end
+        {
+            last.end = last.end.max(range.end);
+        } else {
+            merged.push(range);
+        }
+    }
+    merged.into_iter()
+}
+
+fn decoded(text: &str) -> Option<String> {
+    let mut value = text.to_string();
+    for _ in 0..16 {
+        let next =
+            String::from_utf8_lossy(&urlencoding::decode_binary(value.as_bytes())).into_owned();
+        if next == value {
+            return Some(value);
+        }
+        value = next;
+    }
+    // Refuse excessive encoding rather than silently missing an inner hash.
+    None
 }
 
 pub fn contains_hash(text: &str) -> bool {
-    hash_ranges(text).next().is_some()
+    decoded(text).is_none_or(|text| hash_ranges(&text).next().is_some())
 }
 
 fn redact(text: &str) -> String {
@@ -49,6 +104,50 @@ fn redact(text: &str) -> String {
     }
     result.push_str(&text[end..]);
     result
+}
+
+fn authenticated_token(text: &str, key: &[u8; 32]) -> bool {
+    torrent_ref::open(text, key).is_some()
+        || PRIVACY_CONTEXT
+            .try_with(|context| {
+                crate::routes::auth::decode_token(text, &context.auth_key).is_some()
+            })
+            .unwrap_or(false)
+}
+
+fn redact_tokens(text: &str, key: &[u8; 32], known: Option<&regex::Regex>) -> String {
+    let scrub = |text: &str| {
+        let text = known
+            .map(|r| r.replace_all(text, "[redacted]").into_owned())
+            .unwrap_or_else(|| text.to_owned());
+        redact(&text)
+    };
+    let mut result = String::new();
+    let mut end = 0;
+    for token in AUTHENTICATED_TOKEN.find_iter(text) {
+        if authenticated_token(token.as_str(), key) {
+            result.push_str(&scrub(&text[end..token.start()]));
+            result.push_str(token.as_str());
+            end = token.end();
+        }
+    }
+    result.push_str(&scrub(&text[end..]));
+    result
+}
+
+fn redact_private(text: &str, key: &[u8; 32], known: Option<&regex::Regex>) -> String {
+    let Some(decoded) = decoded(text) else {
+        return "[redacted]".into();
+    };
+    if decoded.to_ascii_lowercase().contains("magnet:") {
+        return "[redacted]".into();
+    }
+    if decoded != text && redact_tokens(&decoded, key, known) != decoded {
+        // The value is encoded, possibly across nested URL components. Refuse
+        // the value rather than guessing an encoding that changes its meaning.
+        return "[redacted]".into();
+    }
+    redact_tokens(text, key, known)
 }
 
 /// Rewrite playback URLs before scrubbing filenames. The original selection stays
@@ -248,13 +347,15 @@ fn sanitize_inner(
             {
                 object.remove("title");
             }
-            for (name, value) in object.iter_mut() {
-                if name != "torrent_ref" && name != "torrent_refs" {
-                    sanitize_inner(value, key, api_scope, known, playable_list);
-                }
+            for value in object.values_mut() {
+                // Verify references rather than trusting their field names.
+                sanitize_inner(value, key, api_scope, known, playable_list);
             }
             let old = std::mem::take(object);
-            object.extend(old.into_iter().map(|(name, value)| (redact(&name), value)));
+            object.extend(
+                old.into_iter()
+                    .map(|(name, value)| (redact_private(&name, key, known), value)),
+            );
         }
         Value::Array(items) => {
             for item in items {
@@ -266,10 +367,7 @@ fn sanitize_inner(
                 text.clear();
             } else {
                 let private = private_url(text, key, 0).unwrap_or_else(|| text.clone());
-                let private = known
-                    .map(|known| known.replace_all(&private, "[redacted]").into_owned())
-                    .unwrap_or(private);
-                *text = redact(&private);
+                *text = redact_private(&private, key, known);
             }
         }
         _ => {}
@@ -304,9 +402,35 @@ fn restore_refs(value: &mut Value, key: &[u8; 32], scope: &str) {
     }
 }
 
+pub(crate) fn textual_content_type(content_type: &str) -> bool {
+    let content_type = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    content_type.starts_with("text/")
+        || content_type.ends_with("+xml")
+        || content_type.ends_with("+json")
+        || matches!(
+            content_type.as_str(),
+            "application/xml"
+                | "application/json"
+                | "application/javascript"
+                | "application/x-nzb"
+                | "application/xhtml+xml"
+                | "application/json-seq"
+                | "application/x-ndjson"
+                | "application/ndjson"
+                | "application/x-mpegurl"
+                | "application/vnd.apple.mpegurl"
+                | "application/x-www-form-urlencoded"
+        )
+}
+
 pub async fn torrent_privacy_middleware(
     State(state): State<Arc<AppState>>,
-    mut request: Request,
+    request: Request,
     next: Next,
 ) -> Response {
     if !state.config.hide_torrent_info_hashes {
@@ -317,12 +441,14 @@ pub async fn torrent_privacy_middleware(
         &state.config.secret_key_raw,
     )
     .ok();
-    let admin = if let Some((id, ref role)) = identity {
-        role == "admin"
-            && crate::db::get_user_role(&state.pool, id).await == Some(crate::db::UserRole::Admin)
-    } else {
-        false
-    };
+    let admin = crate::routes::auth_guard::require_active_role(
+        &state.pool,
+        request.headers(),
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
+    .is_ok();
     if admin {
         let mut response = next.run(request).await;
         response
@@ -331,6 +457,23 @@ pub async fn torrent_privacy_middleware(
         return response;
     }
     let scope = format!("api:{}", identity.map(|(id, _)| id).unwrap_or(0));
+    PRIVACY_CONTEXT
+        .scope(
+            PrivacyContext {
+                key: state.config.secret_key,
+                auth_key: state.config.secret_key_raw.clone(),
+            },
+            private_request(state, request, next, scope),
+        )
+        .await
+}
+
+async fn private_request(
+    state: Arc<AppState>,
+    mut request: Request,
+    next: Next,
+    scope: String,
+) -> Response {
     let path = request.uri().path();
     let playable_list = path.starts_with("/api/v1/stream/")
         || (path.starts_with("/api/v1/catalog/") && path.ends_with("/streams"))
@@ -351,39 +494,81 @@ pub async fn torrent_privacy_middleware(
         let Ok(bytes) = to_bytes(body, MAX_JSON).await else {
             return StatusCode::PAYLOAD_TOO_LARGE.into_response();
         };
-        let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else {
-            return StatusCode::BAD_REQUEST.into_response();
-        };
-        restore_refs(&mut value, &state.config.secret_key, &scope);
-        request = Request::from_parts(parts, Body::from(value.to_string()));
-        request.headers_mut().remove(header::CONTENT_LENGTH);
+        if bytes.is_empty() {
+            request = Request::from_parts(parts, Body::empty());
+        } else {
+            let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            restore_refs(&mut value, &state.config.secret_key, &scope);
+            request = Request::from_parts(parts, Body::from(value.to_string()));
+            request.headers_mut().remove(header::CONTENT_LENGTH);
+        }
     }
-    let response = next.run(request).await;
-    if response
+    let mut response = next.run(request).await;
+    let allow_provider_redirect = response
+        .extensions()
+        .get::<AllowProviderRedirect>()
+        .is_some()
+        && !state.config.hide_torrent_info_hashes_relay;
+    // Inspect all header values, independent of body type. Drop unsafe metadata
+    // (e.g. a download filename or ETag), retaining playable binary bodies. An
+    // unsafe redirect/content type cannot be repaired by dropping its header.
+    let unsafe_headers: Vec<_> = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            if name == header::LOCATION && allow_provider_redirect {
+                return None;
+            }
+            let unsafe_value = value
+                .to_str()
+                .map(|text| redact_private(text, &state.config.secret_key, None) != text)
+                .unwrap_or(true);
+            unsafe_value.then(|| name.clone())
+        })
+        .collect();
+    for name in unsafe_headers {
+        if name == header::LOCATION || name == header::CONTENT_TYPE {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        response.headers_mut().remove(name);
+    }
+    let content_type = response
         .headers()
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.starts_with("application/x-bittorrent"))
-        || response
-            .headers()
-            .get(header::LOCATION)
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|v| contains_hash(v) || v.starts_with("magnet:"))
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if content_type.starts_with("application/x-bittorrent")
+        || content_type.starts_with("text/event-stream")
     {
+        // Never buffer an unbounded SSE stream. Authorized admin streams take
+        // the live-role-checked exemption above; non-admin streams fail closed.
         return StatusCode::FORBIDDEN.into_response();
     }
-    let is_json = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.starts_with("application/json"));
-    if !is_json {
+    let is_json = content_type
+        .split(';')
+        .next()
+        .is_some_and(|t| t.trim() == "application/json" || t.trim().ends_with("+json"));
+    let is_text = textual_content_type(&content_type);
+    if !is_json && !is_text {
         return response;
     }
     let (mut parts, body) = response.into_parts();
     let Ok(bytes) = to_bytes(body, MAX_JSON).await else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
+    if !is_json {
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            return StatusCode::FORBIDDEN.into_response();
+        };
+        if redact_private(text, &state.config.secret_key, None) != text {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        return Response::from_parts(parts, Body::from(bytes));
+    }
     let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
@@ -444,15 +629,79 @@ mod tests {
     }
 
     #[test]
+    fn secondary_filenames_and_encoded_values_cannot_hide_identifiers() {
+        let hash = "1f1914a9d7a2163f08c540bae788806bfad2c732";
+        let encoded: String = hash.bytes().map(|b| format!("%{b:02X}")).collect();
+        let mut value = json!({
+            "files": [{"filename":format!("prefix{hash}suffix.mkv")}],
+            "torrent_ref": hash,
+            "torrent_refs": [hash],
+            "nested": format!("https://example.test/?d={}", urlencoding::encode(&format!("https://elsewhere.test/{encoded}"))),
+            "magnet":format!("%6dagnet:?xt=urn:btih:{encoded}"),
+        });
+        assert!(contains_hash(&encoded));
+        assert_eq!(
+            redact(&format!("{}{hash}abcdef", "ABCDEF".repeat(10))),
+            "[redacted]"
+        );
+        let overlapping = format!("{}{hash}suffix.mkv", "z".repeat(40));
+        let scrubbed = redact(&overlapping);
+        assert!(
+            !scrubbed.contains(&hash[20..]),
+            "overlapping encodings must not reveal hash tails"
+        );
+        sanitize(&mut value, &[9; 32], "api:1");
+        assert!(!decoded(&value.to_string()).unwrap().contains(hash));
+        assert_eq!(value["files"][0]["filename"], "prefix[redacted]suffix.mkv");
+        let safe = "https://example.test/download?token=ordinary%2Fescaped%2Bvalue";
+        assert_eq!(redact_private(safe, &[9; 32], None), safe);
+        // Merely looking like a reference does not grant a bypass.
+        let fake = "T-fake_u5EUB7adS3iwKPh36LHVdhwnLaSHmeyf_.invalid";
+        assert_ne!(redact_private(fake, &[9; 32], None), fake);
+    }
+
+    #[tokio::test]
+    async fn template_modifiers_never_see_hashes_and_scope_does_not_leak() {
+        let hash = "1f1914a9d7a2163f08c540bae788806bfad2c732";
+        let context = json!({"stream":{"filename":format!("prefix{hash}suffix.mkv"),"name":hash}});
+        let template = "{stream.filename|replace('', '-')} {stream.name|upper}";
+        let original = crate::template::render(template, &context);
+        assert!(
+            original
+                .replace('-', "")
+                .to_ascii_lowercase()
+                .contains(hash)
+        );
+        PRIVACY_CONTEXT
+            .scope(
+                PrivacyContext {
+                    key: [9; 32],
+                    auth_key: "test".into(),
+                },
+                async {
+                    let rendered = crate::template::render(template, &context);
+                    assert!(
+                        !rendered
+                            .replace('-', "")
+                            .to_ascii_lowercase()
+                            .contains(hash)
+                    );
+                },
+            )
+            .await;
+        assert_eq!(crate::template::render(template, &context), original);
+    }
+
+    #[test]
     fn recognizes_base32_and_hashes_next_to_filename_separators() {
         assert_eq!(
             redact("file_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567.mkv"),
             "file_[redacted].mkv"
         );
-        assert_eq!(
-            redact(&"a".repeat(64)),
-            "a".repeat(64),
-            "do not corrupt authentication signatures"
-        );
+        assert!(contains_hash(&format!(
+            "prefix{}suffix.mkv",
+            "a".repeat(40)
+        )));
+        assert!(!redact(&"a".repeat(64)).contains(&"a".repeat(40)));
     }
 }

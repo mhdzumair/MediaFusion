@@ -62,6 +62,72 @@ pub fn open(token: &str, key: &[u8; 32]) -> Option<TorrentRef> {
 mod tests {
     use super::*;
     #[test]
+    fn deterministic_hash_looking_ciphertext_remains_playable_after_sanitizing() {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        use cbc::cipher::{BlockModeEncrypt, KeyIvInit, block_padding::Pkcs7};
+        let key = [9; 32];
+        let value = TorrentRef {
+            hash: "1f1914a9d7a2163f08c540bae788806bfad2c732".into(),
+            filename: None,
+            season: None,
+            episode: None,
+            scope: scope("U-test", "realdebrid"),
+        };
+        let bytes = serde_json::to_vec(&value).unwrap();
+        let encryption_key = key_for(&key, b"mediafusion/torrent-ref/encryption/v1");
+        let signing_key = key_for(&key, b"mediafusion/torrent-ref/authentication/v1");
+        // Fixed IVs make this regression deterministic. Production seal still
+        // uses random IVs. Select a fixture the hash heuristic actually matches.
+        for last in 0..=255u8 {
+            let mut iv = [0u8; 16];
+            iv[15] = last;
+            let mut buf = vec![0; (bytes.len() / 16 + 1) * 16];
+            buf[..bytes.len()].copy_from_slice(&bytes);
+            let ciphertext =
+                cbc::Encryptor::<aes::Aes256>::new((&encryption_key).into(), (&iv).into())
+                    .encrypt_padded::<Pkcs7>(&mut buf, bytes.len())
+                    .unwrap();
+            let encoded = URL_SAFE_NO_PAD.encode([iv.as_slice(), ciphertext].concat());
+            let mut mac = Hmac::<Sha256>::new_from_slice(&signing_key).unwrap();
+            mac.update(encoded.as_bytes());
+            let token = format!(
+                "T-{encoded}.{}",
+                URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+            );
+            if !crate::torrent_privacy_middleware::contains_hash(&token) {
+                continue;
+            }
+            let url = format!(
+                "https://example.test/streaming_provider/U-test/playback/realdebrid/{token}"
+            );
+            let nested = format!(
+                "https://mf.test/proxy/stream?d={}",
+                urlencoding::encode(&url)
+            );
+            let mut response = serde_json::json!({"url":url,"nested":nested});
+            crate::torrent_privacy_middleware::sanitize(&mut response, &key, "api:1");
+            assert_eq!(response["url"], url);
+            assert_eq!(response["nested"], nested);
+            assert_eq!(
+                open(
+                    response["url"]
+                        .as_str()
+                        .unwrap()
+                        .rsplit('/')
+                        .next()
+                        .unwrap(),
+                    &key
+                )
+                .unwrap()
+                .hash,
+                value.hash
+            );
+            return;
+        }
+        panic!("deterministic fixtures must exercise the hash heuristic");
+    }
+
+    #[test]
     fn references_are_confidential_authenticated_and_domain_separated() {
         let key = [9; 32];
         let hash = "1f1914a9d7a2163f08c540bae788806bfad2c732";

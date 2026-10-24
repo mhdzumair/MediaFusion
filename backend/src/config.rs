@@ -329,6 +329,8 @@ pub struct AppConfig {
     pub disabled_providers: Vec<String>,
     /// Hide torrent identifiers from non-admin responses and use opaque playback references.
     pub hide_torrent_info_hashes: bool,
+    /// Relay provider URLs containing hashes; false permits provider redirects.
+    pub hide_torrent_info_hashes_relay: bool,
     /// Mirrors Python's `disabled_content_types`. JSON array of content type strings to
     /// block globally, e.g. `'["magnet","torrent"]'`.
     pub disabled_content_types: Vec<String>,
@@ -823,6 +825,7 @@ impl AppConfig {
                     ]
                 }),
             hide_torrent_info_hashes: env("HIDE_TORRENT_INFO_HASHES").ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            hide_torrent_info_hashes_relay: env("HIDE_TORRENT_INFO_HASHES_RELAY").ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             disabled_providers: env("DISABLED_PROVIDERS")
                 .ok().and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
                 .unwrap_or_default(),

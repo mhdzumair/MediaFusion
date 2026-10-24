@@ -38,7 +38,10 @@ pub async fn bulk_delete(
     State(state): State<Arc<AppState>>,
     Json(body): Json<BulkDeleteRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -132,7 +135,10 @@ pub async fn bulk_update(
     State(state): State<Arc<AppState>>,
     Json(body): Json<BulkUpdateRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
