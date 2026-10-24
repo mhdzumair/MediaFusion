@@ -145,32 +145,7 @@ pub async fn link_stream_to_media(
     stream_id: StreamId,
     media_id: MediaId,
 ) -> Result<(), sqlx::Error> {
-    let inserted: Option<(i32,)> = sqlx::query_as(
-        r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary, is_verified, created_at)
-           SELECT $1, $2, true, false, NOW()
-           WHERE NOT EXISTS (
-               SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
-           )
-           RETURNING 1"#,
-    )
-    .bind(stream_id)
-    .bind(media_id)
-    .fetch_optional(pool)
-    .await?;
-
-    if inserted.is_some() {
-        sqlx::query(
-            r#"UPDATE media SET
-                   total_streams = total_streams + 1,
-                   last_stream_added = GREATEST(COALESCE(last_stream_added, NOW()), NOW())
-               WHERE id = $1"#,
-        )
-        .bind(media_id)
-        .execute(pool)
-        .await?;
-    }
-
-    Ok(())
+    link_stream_to_media_with_flags(pool, stream_id, media_id, true, false).await
 }
 
 /// Link stream ↔ media with explicit primary/verified flags.
@@ -181,6 +156,15 @@ pub async fn link_stream_to_media_with_flags(
     is_primary: bool,
     is_verified: bool,
 ) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    // Serialize this parent link without forbidding legitimate per-file links
+    // on the same stream/media pair. Transaction locks work with PgBouncer.
+    // Reserve negative first keys for this two-key advisory-lock namespace.
+    sqlx::query("SELECT pg_advisory_xact_lock($1, $2)")
+        .bind(stream_id.0 ^ i32::MIN)
+        .bind(media_id)
+        .execute(&mut *tx)
+        .await?;
     let inserted: Option<(i32,)> = sqlx::query_as(
         r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary, is_verified, created_at)
            SELECT $1, $2, $3, $4, NOW()
@@ -193,7 +177,7 @@ pub async fn link_stream_to_media_with_flags(
     .bind(media_id)
     .bind(is_primary)
     .bind(is_verified)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
     if inserted.is_some() {
@@ -204,10 +188,10 @@ pub async fn link_stream_to_media_with_flags(
                WHERE id = $1"#,
         )
         .bind(media_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
-
+    tx.commit().await?;
     Ok(())
 }
 

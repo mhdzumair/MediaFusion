@@ -2700,7 +2700,10 @@ fn format_streams(
         .filter_map(|t| {
             let hash = t.get("info_hash").and_then(|v| v.as_str())?;
             let size = t.get("size").and_then(|v| v.as_i64());
-            let file_index = t.get("file_index").and_then(|v| v.as_i64());
+            let file_index = t
+                .get("file_index")
+                .and_then(|v| v.as_i64())
+                .filter(|&index| index >= 0);
             let filename = t.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
             // Build template context and render title + description
@@ -2794,7 +2797,10 @@ fn format_single_stream(
 
     let hash = t.get("info_hash").and_then(|v| v.as_str())?;
     let size = t.get("size").and_then(|v| v.as_i64());
-    let file_index = t.get("file_index").and_then(|v| v.as_i64());
+    let file_index = t
+        .get("file_index")
+        .and_then(|v| v.as_i64())
+        .filter(|&index| index >= 0);
     let filename = t.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
     let is_cached = primary_provider.is_some() && cached_hashes.get(hash).copied().unwrap_or(false);
@@ -3308,6 +3314,48 @@ fn build_playback_url(
 #[cfg(test)]
 mod tests {
     use super::TORRENT_CAPABLE;
+
+    #[test]
+    fn unknown_torrent_file_index_is_omitted_from_stremio_responses() {
+        let cached = std::collections::HashMap::new();
+        for index in [-1, 0, 7] {
+            let torrent =
+                serde_json::json!({"info_hash": "abcdef", "file_index": index, "filename": ""});
+            for provider in [None, Some("realdebrid")] {
+                let single = super::format_single_stream(
+                    &torrent,
+                    "MediaFusion",
+                    "http://localhost",
+                    "secret",
+                    provider,
+                    Some(4),
+                    Some(8),
+                    None,
+                    &cached,
+                    None,
+                )
+                .unwrap();
+                let batch = super::format_streams(
+                    std::slice::from_ref(&torrent),
+                    "MediaFusion",
+                    "http://localhost",
+                    "secret",
+                    provider,
+                    Some(4),
+                    Some(8),
+                    None,
+                    &cached,
+                    None,
+                );
+                for stream in [single, batch[0].clone()] {
+                    assert_eq!(
+                        stream.get("fileIdx").and_then(|v| v.as_i64()),
+                        (index >= 0).then_some(index)
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn qbittorrent_is_torrent_capable() {

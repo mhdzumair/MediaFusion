@@ -631,6 +631,10 @@ pub async fn upsert_torrent_files_by_hash(
     // (stream_id, file_index) / (file_id, media_id, season, episode), so
     // re-running this for files that already exist is a no-op, not a duplicate.
     let mut txn = pool.begin().await?;
+    sqlx::query("SELECT id FROM stream WHERE id = $1 FOR NO KEY UPDATE")
+        .bind(stream_id)
+        .execute(&mut *txn)
+        .await?;
     let total_size: i64 = files.iter().map(|f| f.size).sum();
 
     for f in files {
@@ -805,7 +809,163 @@ async fn link_torrent_to_media(
     files: &[StreamFileStoreInput],
     opts: &StoreStreamOpts,
 ) -> Result<(), sqlx::Error> {
-    link_files_or_media(pool, stream_id, files, opts).await
+    if opts.media_type != MediaType::Series || opts.media_id.0 <= 0 {
+        return link_files_or_media(pool, stream_id, files, opts).await;
+    }
+    link_stream_to_media_with_flags(
+        pool,
+        stream_id,
+        opts.media_id,
+        opts.is_primary,
+        opts.is_verified,
+    )
+    .await?;
+    let mut tx = pool.begin().await?;
+    // Coordinate with provider enrichment so a stale scraper snapshot cannot
+    // overwrite freshly resolved file metadata. Allow FK KEY SHARE locks.
+    sqlx::query("SELECT id FROM stream WHERE id = $1 FOR NO KEY UPDATE")
+        .bind(stream_id)
+        .execute(&mut *tx)
+        .await?;
+    let known = sqlx::query_as::<_, super::types::TorrentFileEpisodeRow>(
+        "SELECT sf.id AS file_id, sf.filename, fml.season_number, fml.episode_number, \
+         fml.episode_end, fml.link_source FROM stream_file sf \
+         LEFT JOIN file_media_link fml ON fml.file_id = sf.id AND fml.media_id = $2 \
+         WHERE sf.stream_id = $1 AND sf.file_index >= 0 AND sf.file_type = $3 \
+         AND NOT sf.is_archive AND sf.filename IS NOT NULL AND sf.filename <> '' \
+         ORDER BY sf.file_index, sf.id",
+    )
+    .bind(stream_id)
+    .bind(opts.media_id)
+    .bind(FileType::Video)
+    .fetch_all(&mut *tx)
+    .await?;
+    let synthetic;
+    let files = if files.is_empty() {
+        if let (Some(season), Some(episode)) = (opts.season, opts.episode) {
+            synthetic = vec![StreamFileStoreInput {
+                file_index: -1,
+                filename: String::new(),
+                size: None,
+                season_number: season,
+                episode_number: episode,
+            }];
+            &synthetic
+        } else {
+            tx.commit().await?;
+            return Ok(());
+        }
+    } else {
+        files
+    };
+    for file in files {
+        let (season, episode) = if file.season_number > 0 && file.episode_number > 0 {
+            (file.season_number, file.episode_number)
+        } else {
+            super::stream_model::resolve_series_episode_numbers(file.file_index, None, None)
+        };
+        let guessed =
+            file.file_index < 0 || !crate::parser::episode_detector::is_video_file(&file.filename);
+        let file_id = if guessed {
+            // Preserve provider/user mappings, including opaque filenames and
+            // multi-episode files. Title-only scraper indexes are not physical indexes.
+            let maps_episode = |row: &&super::types::TorrentFileEpisodeRow| {
+                row.season_number == Some(season)
+                    && row.episode_number.is_some_and(|start| {
+                        episode >= start && episode <= row.episode_end.unwrap_or(start)
+                    })
+            };
+            let mapped = known.iter().filter(maps_episode).find(|row| {
+                row.link_source
+                    .is_some_and(|source| source != LinkSource::PttParser)
+            });
+            let matched = mapped
+                .or_else(|| {
+                    known.iter().find(|row| {
+                        torrent_filename_matches_episode(&row.filename, season, episode)
+                            == Some(true)
+                    })
+                })
+                .or_else(|| {
+                    known.iter().filter(maps_episode).find(|row| {
+                        torrent_filename_matches_episode(&row.filename, season, episode).is_none()
+                    })
+                });
+            if let Some(row) = matched {
+                row.file_id.0
+            } else {
+                // -1 is already discarded by enrichment once real indexes arrive.
+                let unknown = StreamFileStoreInput {
+                    file_index: -1,
+                    filename: String::new(),
+                    size: None,
+                    season_number: season,
+                    episode_number: episode,
+                };
+                insert_stream_file(&mut *tx, stream_id, &unknown, false)
+                    .await?
+                    .ok_or(sqlx::Error::RowNotFound)?
+            }
+        } else {
+            insert_stream_file(&mut *tx, stream_id, file, false)
+                .await?
+                .ok_or(sqlx::Error::RowNotFound)?
+        };
+        if guessed {
+            // Remove only placeholders and explicit filename conflicts from prior
+            // scraper guesses; preserve valid alternate files and provider/user mappings.
+            let conflicting_files: Vec<i32> = known
+                .iter()
+                .filter(|row| {
+                    torrent_filename_matches_episode(&row.filename, season, episode) == Some(false)
+                })
+                .map(|row| row.file_id.0)
+                .collect();
+            sqlx::query(
+                "DELETE FROM file_media_link fml USING stream_file sf \
+                 WHERE fml.file_id = sf.id AND sf.stream_id = $1 AND fml.media_id = $2 \
+                 AND fml.season_number = $3 AND fml.episode_number = $4 \
+                 AND fml.file_id <> $5 AND fml.link_source = $6 \
+                 AND (sf.file_index < 0 OR sf.filename IS NULL OR sf.filename = '' \
+                      OR sf.id = ANY($7))",
+            )
+            .bind(stream_id)
+            .bind(opts.media_id)
+            .bind(season)
+            .bind(episode)
+            .bind(file_id)
+            .bind(LinkSource::PttParser)
+            .bind(&conflicting_files)
+            .execute(&mut *tx)
+            .await?;
+        }
+        insert_file_media_link(
+            &mut *tx,
+            file_id,
+            opts.media_id,
+            season,
+            episode,
+            opts.episode_end,
+            opts.is_primary,
+            opts.link_source,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+fn torrent_filename_matches_episode(filename: &str, season: i32, episode: i32) -> Option<bool> {
+    let name = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
+    let parsed = crate::ptt::parse_title(name);
+    if !parsed.episodes.is_empty() {
+        return Some(
+            parsed.episodes.contains(&episode)
+                && (parsed.seasons.is_empty() || parsed.seasons.contains(&season)),
+        );
+    }
+    crate::parser::episode_detector::detect_episode(name, season)
+        .map(|found| found.season == season && found.episode == episode)
 }
 
 async fn link_files_or_media(

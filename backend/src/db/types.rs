@@ -111,6 +111,17 @@ db_id!(
     ProfileId
 );
 
+/// Physical torrent files and any episode mapping for the requested media.
+#[derive(sqlx::FromRow)]
+pub struct TorrentFileEpisodeRow {
+    pub file_id: StreamFileId,
+    pub filename: String,
+    pub season_number: Option<i32>,
+    pub episode_number: Option<i32>,
+    pub episode_end: Option<i32>,
+    pub link_source: Option<LinkSource>,
+}
+
 /// Stored profile fields needed by the credential backfill.
 #[derive(sqlx::FromRow)]
 pub struct ProfileCredentialRow {

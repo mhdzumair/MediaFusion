@@ -389,3 +389,275 @@ async fn failed_episode_link_does_not_advertise_hash_and_retry_repairs_it() {
         .await
         .expect("clean media");
 }
+
+#[tokio::test]
+async fn rediscovery_preserves_physical_episode_mapping() {
+    use mediafusion_api::db::{StreamFileStoreInput, store_torrent_stream};
+    let _lock = common::lock_db_tests().await;
+    let pool = common::test_pool().await;
+    mediafusion_api::migrate::run(pool).await.unwrap();
+    let media_id: i32 = sqlx::query_scalar("INSERT INTO media (type,title,adult,is_blocked,is_public,is_user_created,total_streams,nudity_status,created_at) VALUES ($1,'review738::pack',false,false,true,false,0,'UNKNOWN',NOW()) RETURNING id")
+        .bind(MediaType::Series).fetch_one(pool).await.unwrap();
+    let hash = format!("f1{:038x}", media_id);
+    let mut input = test_stream(hash.clone());
+    input.files = vec![
+        StreamFileStoreInput {
+            file_index: 0,
+            filename: "Show.S04E01.mkv".into(),
+            size: Some(1000),
+            season_number: 4,
+            episode_number: 1,
+        },
+        StreamFileStoreInput {
+            file_index: 7,
+            filename: "Show.S04E08.mkv".into(),
+            size: Some(1000),
+            season_number: 4,
+            episode_number: 8,
+        },
+    ];
+    let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series).with_episode(
+        Some(4),
+        Some(8),
+        None,
+    );
+    let id = store_torrent_stream(pool, &input, &opts)
+        .await
+        .unwrap()
+        .stream_id();
+    let before = fetch_stream_playback_info(pool, &hash, Some(4), Some(8))
+        .await
+        .unwrap();
+    assert_eq!(before.filename.as_deref(), Some("Show.S04E08.mkv"));
+    // A real Prowlarr/title-only scraper result uses an unverified index-0 stub.
+    input.files = vec![StreamFileStoreInput {
+        file_index: 0,
+        filename: String::new(),
+        size: None,
+        season_number: 4,
+        episode_number: 8,
+    }];
+    assert!(
+        store_torrent_streams(pool, std::slice::from_ref(&input), &opts)
+            .await
+            .contains(&hash)
+    );
+    let after = fetch_stream_playback_info(pool, &hash, Some(4), Some(8))
+        .await
+        .unwrap();
+    let wrong_links: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM file_media_link f JOIN stream_file sf ON sf.id=f.file_id WHERE sf.stream_id=$1 AND sf.file_index=0 AND f.season_number=4 AND f.episode_number=8")
+        .bind(id).fetch_one(pool).await.unwrap();
+    assert_eq!(after.filename.as_deref(), Some("Show.S04E08.mkv"));
+    // Repair a missing mapping from the stored filename, rather than the stub's index.
+    sqlx::query("DELETE FROM file_media_link WHERE media_id=$1 AND episode_number=8")
+        .bind(media_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    assert!(
+        store_torrent_streams(pool, std::slice::from_ref(&input), &opts)
+            .await
+            .contains(&hash)
+    );
+    let repaired = fetch_stream_playback_info(pool, &hash, Some(4), Some(8))
+        .await
+        .unwrap();
+    assert_eq!(repaired.file_index, Some(7));
+
+    // Also repair an index-zero mapping left by an earlier scraper rediscovery.
+    sqlx::query("INSERT INTO file_media_link(file_id, media_id, season_number, episode_number, link_source, is_primary, confidence, created_at) SELECT id,$2,4,8,$3,true,1.0,NOW() FROM stream_file WHERE stream_id=$1 AND file_index=0")
+        .bind(id).bind(media_id).bind(mediafusion_api::db::types::LinkSource::PttParser)
+        .execute(pool).await.unwrap();
+    assert!(
+        store_torrent_streams(pool, std::slice::from_ref(&input), &opts)
+            .await
+            .contains(&hash)
+    );
+    let repaired = fetch_stream_playback_info(pool, &hash, Some(4), Some(8))
+        .await
+        .unwrap();
+    assert_eq!(repaired.file_index, Some(7));
+
+    let repaired_links: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM file_media_link WHERE media_id=$1 AND season_number=4 AND episode_number=8")
+        .bind(media_id).fetch_one(pool).await.unwrap();
+    assert_eq!(
+        repaired_links, 1,
+        "the older incorrect scraper link must be removed"
+    );
+
+    // Preserve an existing mapping when the filename is opaque.
+    sqlx::query(
+        "UPDATE stream_file SET filename='opaque-video.mkv' WHERE stream_id=$1 AND file_index=7",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .unwrap();
+    assert!(
+        store_torrent_streams(pool, std::slice::from_ref(&input), &opts)
+            .await
+            .contains(&hash)
+    );
+    let opaque = fetch_stream_playback_info(pool, &hash, Some(4), Some(8))
+        .await
+        .unwrap();
+    assert_eq!(opaque.file_index, Some(7));
+    assert_eq!(opaque.filename.as_deref(), Some("opaque-video.mkv"));
+
+    // An episode with no known physical file must not inherit file zero.
+    input.files[0].episode_number = 9;
+    let next_opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series).with_episode(
+        Some(4),
+        Some(9),
+        None,
+    );
+    assert!(
+        store_torrent_streams(pool, &[input], &next_opts)
+            .await
+            .contains(&hash)
+    );
+    let unknown = fetch_stream_playback_info(pool, &hash, Some(4), Some(9))
+        .await
+        .unwrap();
+    assert_eq!(unknown.file_index, Some(-1));
+    assert_eq!(unknown.filename.as_deref(), Some(""));
+
+    // Provider enrichment replaces the placeholder with the actual file.
+    mediafusion_api::db::upsert_torrent_files_by_hash(
+        pool,
+        &hash,
+        &[mediafusion_api::db::TorrentFileEntry {
+            file_index: 8,
+            filename: "Show.S04E09.mkv".into(),
+            size: 1000,
+            season: Some(4),
+            episode: Some(9),
+        }],
+        mediafusion_api::db::types::LinkSource::TorrentMetadata,
+    )
+    .await
+    .unwrap();
+    let enriched = fetch_stream_playback_info(pool, &hash, Some(4), Some(9))
+        .await
+        .unwrap();
+    assert_eq!(enriched.file_index, Some(8));
+    assert_eq!(enriched.filename.as_deref(), Some("Show.S04E09.mkv"));
+    let first = fetch_stream_playback_info(pool, &hash, Some(4), Some(1))
+        .await
+        .unwrap();
+    assert_eq!(first.filename.as_deref(), Some("Show.S04E01.mkv"));
+    sqlx::query("DELETE FROM stream WHERE id=$1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM media WHERE id=$1")
+        .bind(media_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        wrong_links, 0,
+        "rediscovery must not corrupt the verified file/episode mapping"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_link_repairs_do_not_duplicate_parent_links() {
+    use mediafusion_api::db::store_torrent_stream;
+    let _lock = common::lock_db_tests().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(&std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://mediafusion:mediafusion@127.0.0.1:5432/mediafusion".into()
+        }))
+        .await
+        .unwrap();
+    mediafusion_api::migrate::run(&pool).await.unwrap();
+    let media_id: i32 = sqlx::query_scalar("INSERT INTO media (type,title,adult,is_blocked,is_public,is_user_created,total_streams,nudity_status,created_at) VALUES ($1,'review738::concurrent-repair',false,false,true,false,0,'UNKNOWN',NOW()) RETURNING id")
+        .bind(MediaType::Series).fetch_one(&pool).await.unwrap();
+    let hash = format!("f2{:038x}", media_id);
+    let input = test_stream(hash.clone());
+    // Reproduce an existing torrent with no media link, e.g. after a prior failed link.
+    let id = store_torrent_stream(
+        &pool,
+        &input,
+        &StoreStreamOpts::scraper(MediaId(0), MediaType::Series),
+    )
+    .await
+    .unwrap()
+    .stream_id();
+    sqlx::query("CREATE FUNCTION review738_barrier() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock_shared(738, NEW.media_id); RETURN NEW; END $$").execute(&pool).await.unwrap();
+    sqlx::query("CREATE TRIGGER review738_barrier BEFORE INSERT ON stream_media_link FOR EACH ROW EXECUTE FUNCTION review738_barrier()").execute(&pool).await.unwrap();
+    let mut blocker = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(738,$1)")
+        .bind(media_id)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let mut tasks = Vec::new();
+    for episode in [7, 8] {
+        let pool = pool.clone();
+        let input = input.clone();
+        tasks.push(tokio::spawn(async move {
+            store_torrent_streams(
+                &pool,
+                &[input],
+                &StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series).with_episode(
+                    Some(4),
+                    Some(episode),
+                    None,
+                ),
+            )
+            .await
+        }));
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(5),async {
+        loop {
+            let count: i64=sqlx::query_scalar("SELECT COUNT(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event='advisory'").fetch_one(&pool).await.unwrap();
+            if count >= 2 { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    blocker.commit().await.unwrap();
+    for task in tasks {
+        assert!(task.await.unwrap().contains(&hash));
+    }
+    sqlx::query("DROP TRIGGER review738_barrier ON stream_media_link")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DROP FUNCTION review738_barrier()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stream_media_link WHERE stream_id=$1 AND media_id=$2",
+    )
+    .bind(id)
+    .bind(media_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let total: i32 = sqlx::query_scalar("SELECT total_streams FROM media WHERE id=$1")
+        .bind(media_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(total, 1, "counter must count the torrent once");
+    sqlx::query("DELETE FROM stream WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM media WHERE id=$1")
+        .bind(media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    assert_eq!(
+        count, 1,
+        "concurrent repair must not duplicate the parent stream/media link"
+    );
+}

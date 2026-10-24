@@ -796,7 +796,8 @@ async fn resolve_playback_url(
     // provider reports more files than we have stored (e.g. a scraper stub for a single
     // episode of what's actually a multi-file torrent).
     let no_file_metadata = stream_info.has_no_files
-        || stream_info.filename.is_none()
+        || stream_info.file_index.is_some_and(|index| index < 0)
+        || stream_info.filename.as_deref().is_none_or(str::is_empty)
         || provider_files.len() > stream_info.total_files as usize;
     if no_file_metadata && !provider_files.is_empty() {
         tracing::info!(
@@ -1040,6 +1041,12 @@ async fn playback_metadata_needs_refresh(
     let Some(info) = db::fetch_stream_playback_info(pool, info_hash, season, episode).await else {
         return false;
     };
+
+    if info.file_index.is_some_and(|index| index < 0)
+        || info.filename.as_deref().is_none_or(str::is_empty)
+    {
+        return true;
+    }
 
     // Series episode requests against a single mapped row whose filename is
     // not a real on-disk video name (no extension — e.g. "Race", "Qualifying")
