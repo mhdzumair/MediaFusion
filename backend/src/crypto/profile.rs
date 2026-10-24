@@ -204,6 +204,30 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
         }
     }
 
+    // Legacy profiles store one provider directly rather than by array index.
+    for provider_key in ["sp", "streaming_provider"] {
+        if let (Some(provider), Some(provider_secrets)) = (
+            config.get_mut(provider_key).and_then(Value::as_object_mut),
+            secrets_obj.get(provider_key).and_then(Value::as_object),
+        ) {
+            for (field, value) in provider_secrets {
+                if field == "_index" {
+                    continue;
+                }
+                if let Some(fields) = value.as_object() {
+                    let nested = provider
+                        .entry(field.clone())
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(nested) = nested.as_object_mut() {
+                        nested.extend(fields.clone());
+                    }
+                } else if !value.is_null() {
+                    provider.insert(field.clone(), value.clone());
+                }
+            }
+        }
+    }
+
     let config_obj = config.as_object_mut().unwrap();
 
     // MediaFlow api_password
@@ -252,7 +276,11 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
 
 /// Decrypt AES-256-CBC encrypted secrets blob (no zlib, unlike D- prefix).
 /// Returns empty JSON object on any error.
-pub fn decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> serde_json::Value {
+pub fn decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> Value {
+    try_decrypt_secrets(encrypted, key).unwrap_or_else(|| serde_json::json!({}))
+}
+
+pub(crate) fn try_decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> Option<Value> {
     use aes::Aes256;
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use cbc::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
@@ -263,19 +291,19 @@ pub fn decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> serde_json::Value {
     let stripped = encrypted.trim_end_matches('=');
     let raw = match URL_SAFE_NO_PAD.decode(stripped) {
         Ok(r) if r.len() >= 17 => r,
-        _ => return serde_json::Value::Object(Default::default()),
+        _ => return None,
     };
     let iv: [u8; 16] = raw[..16].try_into().unwrap();
     let mut buf = raw[16..].to_vec();
     let decrypted = match Dec::new(key.into(), &iv.into()).decrypt_padded::<Pkcs7>(&mut buf) {
         Ok(d) => d.to_vec(),
-        Err(_) => return serde_json::Value::Object(Default::default()),
+        Err(_) => return None,
     };
     let s = match std::str::from_utf8(&decrypted) {
         Ok(s) => s,
-        Err(_) => return serde_json::Value::Object(Default::default()),
+        Err(_) => return None,
     };
-    serde_json::from_str(s).unwrap_or_else(|_| serde_json::Value::Object(Default::default()))
+    serde_json::from_str(s).ok()
 }
 
 /// Encrypt a secrets JSON object with AES-256-CBC (no zlib compression).

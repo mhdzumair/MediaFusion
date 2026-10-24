@@ -11,6 +11,7 @@ use reqwest::{
     header::{COOKIE, HeaderMap, SET_COOKIE},
 };
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::providers::{
     ProviderError,
@@ -244,20 +245,102 @@ const FILE_PRIORITY_NORMAL: i32 = 1;
 /// URL can outlive the request that keeps its file downloading.
 const SELECTION_LEASE_SECS: i64 = 3600;
 
-/// Record that `wanted` has a request, and return every index that has one now.
-async fn requested_files(redis: &RedisClient, info_hash: &str, wanted: usize) -> Vec<usize> {
-    let key = format!("qbittorrent:selected:{info_hash}");
-    let _ = redis.sadd::<(), _, _>(&key, wanted as i64).await;
-    let _ = redis
-        .expire::<i64, _>(&key, SELECTION_LEASE_SECS, None)
-        .await;
-    redis
-        .smembers::<Vec<i64>, _>(&key)
-        .await
-        .unwrap_or_default()
+// New namespace deliberately ignores the former globally shared hash-only sets.
+fn selection_key(cfg: &QbConfig, info_hash: &str) -> String {
+    let endpoint = url::Url::parse(&cfg.qb_url)
+        .map(|url| url.to_string().trim_end_matches('/').to_owned())
+        .unwrap_or_else(|_| cfg.qb_url.clone());
+    let identity = serde_json::to_vec(&(endpoint, &cfg.qb_user)).unwrap();
+    let scope: String = Sha256::digest(identity)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!(
+        "qbittorrent:selected:v2:{scope}:{}",
+        info_hash.to_ascii_lowercase()
+    )
+}
+
+const SELECTION_LOCK_SECS: i64 = 60;
+const SELECTION_UPDATE_TIMEOUT: Duration = Duration::from_secs(20);
+const RELEASE_SELECTION_LOCK: &str = r#"
+    if redis.call('GET', KEYS[1]) == ARGV[1] then
+        return redis.call('DEL', KEYS[1])
+    end
+    return 0
+"#;
+
+struct SelectionLock {
+    redis: RedisClient,
+    key: String,
+    owner: String,
+}
+
+impl SelectionLock {
+    async fn acquire(redis: &RedisClient, selection_key: &str) -> Result<Self, ProviderError> {
+        let key = format!("{selection_key}:lock");
+        let owner = uuid::Uuid::new_v4().to_string();
+        let acquire = async {
+            loop {
+                let acquired: Option<String> = redis
+                    .set(
+                        &key,
+                        &owner,
+                        Some(Expiration::EX(SELECTION_LOCK_SECS)),
+                        Some(SetOptions::NX),
+                        false,
+                    )
+                    .await
+                    .map_err(|_| selection_error())?;
+                if acquired.is_some() {
+                    return Ok(Self {
+                        redis: redis.clone(),
+                        key,
+                        owner,
+                    });
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), acquire)
+            .await
+            .map_err(|_| selection_error())?
+    }
+
+    async fn release(self) {
+        // The token comparison prevents a delayed release deleting another owner's lock.
+        let _ = self
+            .redis
+            .eval::<i64, _, _, _>(RELEASE_SELECTION_LOCK, &self.key, &self.owner)
+            .await;
+    }
+}
+
+// Cancelled/failed updates leave the lock to expire. This also gives an in-flight
+// qBittorrent request time to finish before another request changes priorities.
+// Successful updates release immediately; work is capped well below the lease.
+fn selection_error() -> ProviderError {
+    ProviderError::api(
+        "Unable to coordinate qBittorrent file selection; retry playback",
+        "qbittorrent_error.mp4",
+    )
+}
+
+/// Record the request and fetch the set atomically. Redis failure must not be
+/// interpreted as an empty set, which would disable every torrent file.
+async fn requested_files(
+    redis: &RedisClient,
+    key: &str,
+    wanted: usize,
+) -> Result<Vec<usize>, ProviderError> {
+    let indexes: Vec<i64> = redis.eval(
+        "redis.call('SADD', KEYS[1], ARGV[1]); redis.call('EXPIRE', KEYS[1], ARGV[2]); return redis.call('SMEMBERS', KEYS[1])",
+        key, (wanted as i64, SELECTION_LEASE_SECS),
+    ).await.map_err(|_| selection_error())?;
+    Ok(indexes
         .into_iter()
-        .filter_map(|i| (i >= 0).then_some(i as usize))
-        .collect()
+        .filter_map(|i| usize::try_from(i).ok())
+        .collect())
 }
 
 /// The priorities to apply: every file with an outstanding request is enabled
@@ -302,10 +385,19 @@ async fn qb_select_only_file(
     files: &[QbFile],
     wanted: usize,
 ) -> Result<(), ProviderError> {
-    let requested = requested_files(redis, info_hash, wanted).await;
-    for (ids, priority) in file_prio_requests(files, &requested) {
-        qb_file_prio(http, cfg, session_cookie, info_hash, &ids, priority).await?;
-    }
+    let key = selection_key(cfg, info_hash);
+    let lock = SelectionLock::acquire(redis, &key).await?;
+    let update = async {
+        let requested = requested_files(redis, &key, wanted).await?;
+        for (ids, priority) in file_prio_requests(files, &requested) {
+            qb_file_prio(http, cfg, session_cookie, info_hash, &ids, priority).await?;
+        }
+        Ok::<(), ProviderError>(())
+    };
+    tokio::time::timeout(SELECTION_UPDATE_TIMEOUT, update)
+        .await
+        .map_err(|_| selection_error())??;
+    lock.release().await;
     Ok(())
 }
 
@@ -1051,6 +1143,162 @@ mod tests {
         parse_config, qb_files_from_json, qb_torrent_from_json, select_torrent_file_index,
         session_cookie, torrent_file_href,
     };
+
+    #[test]
+    fn selection_namespace_isolated_by_server_and_account() {
+        let cfg = parse_config(&json!({"qur":"http://QB:80/", "qus":"alice", "wur":"http://dav"}))
+            .unwrap();
+        let same = parse_config(
+            &json!({"qur":"http://qb", "qus":"alice", "wur":"http://other-dav", "qpw":"rotated"}),
+        )
+        .unwrap();
+        let other_server =
+            parse_config(&json!({"qur":"http://other-qb", "qus":"alice", "wur":"http://dav"}))
+                .unwrap();
+        let other_user =
+            parse_config(&json!({"qur":"http://qb", "qus":"bob", "wur":"http://dav"})).unwrap();
+        let key = super::selection_key(&cfg, "ABC");
+        assert_eq!(key, super::selection_key(&same, "abc"));
+        assert_ne!(key, super::selection_key(&other_server, "abc"));
+        assert_ne!(key, super::selection_key(&other_user, "abc"));
+        assert!(!key.contains("alice"));
+        assert!(!key.contains("http"));
+    }
+
+    async fn test_redis() -> fred::clients::Client {
+        crate::cache::client::build(
+            &std::env::var("TEST_REDIS_URL").expect("set TEST_REDIS_URL to a test Redis instance"),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_REDIS_URL"]
+    async fn selection_sets_do_not_cross_instances_or_trust_legacy_keys() {
+        use fred::prelude::*;
+        let redis = test_redis().await;
+        let hash = uuid::Uuid::new_v4().simple().to_string();
+        let cfg = parse_config(&json!({"qur":"http://one-qb", "qus":"alice", "wur":"http://dav"}))
+            .unwrap();
+        let other =
+            parse_config(&json!({"qur":"http://two-qb", "qus":"alice", "wur":"http://dav"}))
+                .unwrap();
+        let legacy = format!("qbittorrent:selected:{hash}");
+        redis.sadd::<i64, _, _>(&legacy, 99).await.unwrap();
+        let first = super::selection_key(&cfg, &hash);
+        let second = super::selection_key(&other, &hash);
+        assert_eq!(
+            super::requested_files(&redis, &first, 1).await.unwrap(),
+            vec![1]
+        );
+        assert_eq!(
+            super::requested_files(&redis, &second, 2).await.unwrap(),
+            vec![2]
+        );
+        redis
+            .del::<i64, _>(vec![first, second, legacy])
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_REDIS_URL"]
+    async fn selection_release_cannot_delete_another_owners_lock() {
+        use fred::prelude::*;
+        let redis = test_redis().await;
+        let key = format!("test:qb-selection:{}", uuid::Uuid::new_v4());
+        let lock = super::SelectionLock::acquire(&redis, &key).await.unwrap();
+        let lock_key = format!("{key}:lock");
+        redis
+            .set::<(), _, _>(
+                &lock_key,
+                "replacement-owner",
+                Some(Expiration::EX(60)),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        lock.release().await;
+        assert_eq!(
+            redis.get::<String, _>(&lock_key).await.unwrap(),
+            "replacement-owner"
+        );
+        redis.del::<i64, _>(&lock_key).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_REDIS_URL"]
+    async fn concurrent_episode_requests_serialize_snapshot_and_priority_changes() {
+        use fred::prelude::*;
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
+        };
+        let redis = test_redis().await;
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v2/torrents/filePrio"))
+            .respond_with(
+                ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(100)),
+            )
+            .mount(&server)
+            .await;
+        let cfg =
+            parse_config(&json!({"qur":server.uri(), "qus":"alice", "wur":"http://dav"})).unwrap();
+        let http = reqwest::Client::new();
+        let hash = uuid::Uuid::new_v4().simple().to_string();
+        let files = vec![qbf(0, "E01.mkv"), qbf(1, "E02.mkv"), qbf(2, "E03.mkv")];
+        let first = super::qb_select_only_file(&http, &cfg, "SID=test", &hash, &redis, &files, 0);
+        let second = async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while server.received_requests().await.unwrap().is_empty() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            super::qb_select_only_file(&http, &cfg, "SID=test", &hash, &redis, &files, 1).await
+        };
+        let (a, b) = tokio::join!(first, second);
+        a.unwrap();
+        b.unwrap();
+        let requests = server.received_requests().await.unwrap();
+        let updates: Vec<_> = requests
+            .iter()
+            .map(|r| {
+                let form: std::collections::HashMap<_, _> =
+                    url::form_urlencoded::parse(&r.body).into_owned().collect();
+                (form["id"].clone(), form["priority"].clone())
+            })
+            .collect();
+        assert_eq!(
+            updates,
+            vec![
+                ("1|2".into(), "0".into()),
+                ("0".into(), "1".into()),
+                ("2".into(), "0".into()),
+                ("0|1".into(), "1".into())
+            ]
+        );
+        let key = super::selection_key(&cfg, &hash);
+        // Coordination failure must not turn every file off.
+        redis
+            .set::<(), _, _>(&key, "wrong-type", Some(Expiration::EX(60)), None, false)
+            .await
+            .unwrap();
+        assert!(
+            super::qb_select_only_file(&http, &cfg, "SID=test", &hash, &redis, &files, 0)
+                .await
+                .is_err()
+        );
+        assert_eq!(server.received_requests().await.unwrap().len(), 4);
+        redis
+            .del::<i64, _>(vec![key.clone(), format!("{key}:lock")])
+            .await
+            .unwrap();
+    }
 
     fn qbf(index: usize, name: &str) -> QbFile {
         QbFile {

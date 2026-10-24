@@ -127,6 +127,14 @@ async fn main() {
         .await
         .expect("database migration failed");
 
+    mediafusion_api::db::profile_credentials::protect_qbittorrent_credentials(
+        &state.pool,
+        &state.redis,
+        &state.config.secret_key,
+    )
+    .await
+    .expect("profile credential backfill failed");
+
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
     schedule_keyword_recomputes(&state.pool).await;

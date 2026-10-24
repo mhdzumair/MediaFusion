@@ -143,9 +143,17 @@ fn deep_merge(base: &mut serde_json::Value, overlay: serde_json::Value) {
             }
         }
         (Value::Array(base_arr), Value::Array(overlay_arr)) => {
-            // Merge each element pair; base array is authoritative for length/structure.
-            for (base_el, overlay_el) in base_arr.iter_mut().zip(overlay_arr) {
-                deep_merge(base_el, overlay_el);
+            // Backfilled secrets can be sparse or reordered. `_index` identifies
+            // the provider; array position is only a legacy fallback.
+            for (position, overlay_el) in overlay_arr.into_iter().enumerate() {
+                let index = overlay_el
+                    .get("_index")
+                    .and_then(Value::as_u64)
+                    .and_then(|i| usize::try_from(i).ok())
+                    .unwrap_or(position);
+                if let Some(base_el) = base_arr.get_mut(index) {
+                    deep_merge(base_el, overlay_el);
+                }
             }
         }
         (base, overlay) => {
@@ -194,7 +202,7 @@ pub fn mask_config(mut config: serde_json::Value) -> serde_json::Value {
                     // qbittorrent_config / qbc
                     for qbc_key in &["qbittorrent_config", "qbc"] {
                         if let Some(Value::Object(qbc)) = obj.get_mut(*qbc_key) {
-                            mask_object_fields(qbc, &["qb_password", "qpw", "qb_username", "qus"]);
+                            mask_object_fields(qbc, crate::crypto::qbittorrent_credentials::FIELDS);
                         }
                     }
                     // mediaflow_config / mfc
@@ -233,7 +241,7 @@ pub fn mask_config(mut config: serde_json::Value) -> serde_json::Value {
             mask_object_fields(obj, &["token", "tk", "password", "pw", "email", "em"]);
             for qbc_key in &["qbittorrent_config", "qbc"] {
                 if let Some(Value::Object(qbc)) = obj.get_mut(*qbc_key) {
-                    mask_object_fields(qbc, &["qb_password", "qpw", "qb_username", "qus"]);
+                    mask_object_fields(qbc, crate::crypto::qbittorrent_credentials::FIELDS);
                 }
             }
             for mfc_key in &["mediaflow_config", "mfc"] {
@@ -443,21 +451,7 @@ fn extract_provider_secrets(
         }
     }
     // Also extract from sub-configs
-    for sub_key in &["qbittorrent_config", "qbc"] {
-        if let Some(Value::Object(sub)) = clean.get_mut(*sub_key) {
-            let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
-            for f in &["qb_password", "qpw", "qb_username", "qus"] {
-                if let Some(v) = sub.remove(*f)
-                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
-                {
-                    sub_secrets.insert((*f).to_string(), v);
-                }
-            }
-            if !sub_secrets.is_empty() {
-                secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
-            }
-        }
-    }
+    secrets_entry.extend(crate::crypto::qbittorrent_credentials::extract(&mut clean));
     for sub_key in &["mediaflow_config", "mfc"] {
         if let Some(Value::Object(sub)) = clean.get_mut(*sub_key) {
             let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
@@ -1499,6 +1493,66 @@ mod tests {
     use serde_json::json;
 
     use super::build_streaming_providers_summary;
+
+    #[test]
+    fn sparse_backfilled_secrets_restore_to_the_correct_provider() {
+        let mut config = json!({"sps":[{"sv":"realdebrid"},{"sv":"qbittorrent","qbc":{}}]});
+        super::deep_merge(
+            &mut config,
+            json!({"sps":[{"_index":1,"qbc":{"wpw":"dav-secret"}}]}),
+        );
+        assert!(config["sps"][0].get("qbc").is_none());
+        assert_eq!(config["sps"][1]["qbc"]["wpw"], "dav-secret");
+    }
+
+    #[test]
+    fn qbittorrent_credentials_are_masked_encrypted_and_restored_for_every_alias() {
+        use super::{mask_config, restore_masked, split_config};
+        use crate::crypto::{profile, qbittorrent_credentials::FIELDS};
+        let key = [42; 32];
+        for provider_key in ["sps", "streaming_providers", "sp", "streaming_provider"] {
+            for config_key in ["qbc", "qbittorrent_config"] {
+                let mut credentials = json!({"qur": "http://qb:8080", "wur": "http://dav"});
+                for field in FIELDS {
+                    credentials[*field] = json!(format!("synthetic-{field}"));
+                }
+                let provider = json!({"sv": "qbittorrent", config_key: credentials});
+                let plural = matches!(provider_key, "sps" | "streaming_providers");
+                let original =
+                    json!({provider_key: if plural { json!([provider]) } else { provider }});
+                let masked = mask_config(original.clone());
+                let masked_provider = if plural {
+                    &masked[provider_key][0]
+                } else {
+                    &masked[provider_key]
+                };
+                for field in FIELDS {
+                    assert_eq!(masked_provider[config_key][*field], super::MASK);
+                }
+                let (clean, encrypted) = split_config(&original, &key);
+                let clean_provider = if plural {
+                    &clean[provider_key][0]
+                } else {
+                    &clean[provider_key]
+                };
+                for field in FIELDS {
+                    assert!(clean_provider[config_key].get(*field).is_none());
+                }
+                let mut restored = clean;
+                profile::merge_secrets(
+                    &mut restored,
+                    &profile::decrypt_secrets(&encrypted.unwrap(), &key),
+                );
+                assert_eq!(restored, original);
+                let mut edit = masked;
+                restore_masked(&mut edit, &restored);
+                assert_eq!(
+                    edit, original,
+                    "saving a masked form must preserve credentials"
+                );
+            }
+        }
+    }
 
     #[test]
     fn a_legacy_single_provider_still_counts_for_the_library() {

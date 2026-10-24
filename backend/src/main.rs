@@ -96,6 +96,14 @@ async fn main() {
             .expect("database migration failed");
     }
 
+    mediafusion_api::db::profile_credentials::protect_qbittorrent_credentials(
+        &state.pool,
+        &state.redis,
+        &state.config.secret_key,
+    )
+    .await
+    .expect("profile credential backfill failed");
+
     // Sync keyword file → DB and recompute blocked flags in the background so the
     // server starts accepting requests immediately.
     {

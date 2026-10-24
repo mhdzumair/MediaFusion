@@ -41,6 +41,7 @@ pub mod metadata_store;
 pub mod metadata_suggestion_apply;
 pub mod playback_tracking;
 pub mod pool;
+pub mod profile_credentials;
 pub mod retry;
 pub mod stream_backfill;
 pub mod stream_links;

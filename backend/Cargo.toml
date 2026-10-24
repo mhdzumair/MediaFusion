@@ -81,7 +81,7 @@ sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "postgres",
 chrono = { version = "0.4", features = ["serde"] }
 
 # Redis
-fred = { version = "10", features = ["tokio-rustls", "i-hyperloglog"] }
+fred = { version = "10", features = ["tokio-rustls", "i-hyperloglog", "i-scripts"] }
 
 # AES-256-CBC decryption (matches Python PyCryptodome AES.MODE_CBC)
 aes = "0.9"

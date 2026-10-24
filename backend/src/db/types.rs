@@ -110,6 +110,16 @@ db_id!(
     /// Primary key / FK referencing `user_profiles.id` (INT4).
     ProfileId
 );
+
+/// Stored profile fields needed by the credential backfill.
+#[derive(sqlx::FromRow)]
+pub struct ProfileCredentialRow {
+    pub id: ProfileId,
+    pub uuid: String,
+    pub config: serde_json::Value,
+    pub encrypted_secrets: Option<String>,
+}
+
 db_id!(
     /// Primary key of `stream_file.id` (INT4). Not the bigint `size` column.
     StreamFileId

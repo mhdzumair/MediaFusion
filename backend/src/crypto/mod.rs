@@ -1,6 +1,7 @@
 pub mod decrypt;
 pub mod mediaflow;
 pub mod profile;
+pub mod qbittorrent_credentials;
 pub mod telegram_session;
 
 pub use decrypt::decrypt_user_data;

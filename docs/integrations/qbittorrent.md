@@ -83,6 +83,12 @@ WebDAV is available at `http://localhost:8080/webdav/`.
 5. Adjust **Play video after download** (e.g. `30` = start playing when 30% is downloaded) and the **download wait timeout** in seconds if the torrent needs longer than 5 minutes to get there. Leave **prioritize first and last pieces** on unless you always wait for the entire file.
 6. Save the configuration
 
+Stored qBittorrent and WebDAV credentials are encrypted with the instance's
+`SECRET_KEY` and masked in configuration responses. On API or worker startup,
+existing profiles are backfilled into encrypted storage and their Redis profile
+caches are invalidated. Keep the same `SECRET_KEY` when upgrading; the backfill
+stops on unreadable encrypted secrets rather than overwriting them.
+
 !!! tip "Playing before the download finishes"
     Playback starts as soon as the threshold is reached, and the player reads the file over WebDAV while qBittorrent keeps writing to it. Two things make this usable: MediaFusion asks qBittorrent to download **only the file you picked**, so a season pack does not queue the whole run, and it enables **prioritize first and last pieces**, so the head of the file arrives before the middle.
 
