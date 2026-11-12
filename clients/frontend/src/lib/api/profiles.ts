@@ -83,6 +83,7 @@ export type StreamingService =
   | 'qbittorrent'
   | 'stremthru'
   | 'torrin'
+  | 'highway'
   | 'easydebrid'
   | 'debrider'
 

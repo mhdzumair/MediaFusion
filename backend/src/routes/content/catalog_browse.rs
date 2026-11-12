@@ -1471,6 +1471,7 @@ pub async fn get_media_streams(
         ("seedr", "SR"),
         ("stremthru", "ST"),
         ("torrin", "TRN"),
+        ("highway", "HW"),
         ("pikpak", "PP"),
         ("easydebrid", "ED"),
     ]

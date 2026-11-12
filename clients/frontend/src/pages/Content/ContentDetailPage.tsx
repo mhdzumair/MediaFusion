@@ -262,6 +262,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   qbittorrent: 'qBittorrent',
   stremthru: 'StremThru',
   torrin: 'Torrin',
+  highway: 'HighWay',
   sabnzbd: 'SABnzbd',
   nzbget: 'NZBGet',
   p2p: 'P2P',
@@ -1316,6 +1317,7 @@ const SERVICE_DISPLAY_NAMES: Record<string, string> = {
   qbittorrent: 'qBittorrent',
   stremthru: 'StremThru',
   torrin: 'Torrin',
+  highway: 'HighWay',
   p2p: 'P2P',
 }
 
