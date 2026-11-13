@@ -311,6 +311,7 @@ pub async fn get_scrape_status_by_media(
             "torbox",
             "stremthru",
             "torrin",
+            "highway",
             "easydebrid",
             "debrider",
         ];

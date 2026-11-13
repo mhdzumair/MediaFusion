@@ -158,6 +158,13 @@ pub async fn delete_all_for_service(
             )
             .await
         }
+        "highway" => {
+            providers::torrents::highway::delete_all_torrents(
+                state.http_for_provider("highway"),
+                token,
+            )
+            .await
+        }
         "offcloud" => {
             providers::torrents::offcloud::delete_all_torrents(
                 state.http_for_provider("offcloud"),

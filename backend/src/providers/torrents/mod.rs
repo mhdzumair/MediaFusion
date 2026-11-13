@@ -11,6 +11,7 @@ pub mod cache_federation;
 pub mod debrider;
 pub mod debridlink;
 pub mod easydebrid;
+pub mod highway;
 pub mod metadata_update;
 pub mod offcloud;
 pub mod pikpak;
@@ -41,6 +42,7 @@ pub fn supports_download_list(service: &str) -> bool {
             | "seedr"
             | "stremthru"
             | "torrin"
+            | "highway"
     )
 }
 
@@ -61,6 +63,7 @@ pub async fn list_downloaded_torrents(
         "seedr" => seedr::list_downloaded_torrents(http, token).await,
         "stremthru" => stremthru::list_downloaded_torrents(http, token).await,
         "torrin" => torrin::list_downloaded_torrents(http, token).await,
+        "highway" => highway::list_downloaded_torrents(http, token).await,
         // EasyDebrid is cache-only — no account-level torrent list endpoint exists.
         "easydebrid" => Ok(vec![]),
         other => {

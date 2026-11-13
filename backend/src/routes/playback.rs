@@ -775,6 +775,7 @@ async fn resolve_playback_url(
         }
         "stremthru" => call_provider_simple!(providers::torrents::stremthru),
         "torrin" => call_provider_simple!(providers::torrents::torrin),
+        "highway" => call_provider_simple!(providers::torrents::highway),
         "offcloud" => call_provider_simple!(providers::torrents::offcloud),
         // easydebrid: forward wired; X-Forwarded-For is stripped by /proxy/forward — None for user_ip
         "easydebrid" => call_provider_simple!(providers::torrents::easydebrid),

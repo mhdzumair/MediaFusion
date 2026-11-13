@@ -219,6 +219,18 @@ async fn validate_one(
                 }
             }
         }
+        "highway" => {
+            let token = match provider_token(provider) {
+                Some(t) => t,
+                None => return ValidationResult::error("HighWay API token is missing"),
+            };
+            match super::torrents::highway::validate_credentials(http, token).await {
+                Ok(()) => ValidationResult::success(),
+                Err(e) => {
+                    ValidationResult::error(format!("Failed to validate HighWay credentials: {e}"))
+                }
+            }
+        }
         "easydebrid" => {
             let token = match provider_token(provider) {
                 Some(t) => t,

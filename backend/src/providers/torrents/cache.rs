@@ -23,8 +23,14 @@ const USER_HASHES_PREFIX: &str = "user_hashes:";
 const USER_HASHES_TTL: i64 = 300; // 5 minutes
 
 /// Global providers check service-level CDN cache (same for all users).
-const GLOBAL_CACHE_CHECK_PROVIDERS: &[&str] =
-    &["torbox", "stremthru", "offcloud", "premiumize", "torrin"];
+const GLOBAL_CACHE_CHECK_PROVIDERS: &[&str] = &[
+    "torbox",
+    "stremthru",
+    "offcloud",
+    "premiumize",
+    "torrin",
+    "highway",
+];
 
 // ─── Marker helpers ───────────────────────────────────────────────────────────
 
@@ -241,6 +247,7 @@ pub async fn live_check(
             "easydebrid" => super::easydebrid::check_cached(http, token, hashes).await,
             "stremthru" => super::stremthru::check_cached(http, token, hashes, media_id).await,
             "torrin" => super::torrin::check_cached(http, token, hashes, media_id).await,
+            "highway" => super::highway::check_cached(http, token, hashes).await,
             "alldebrid" => super::alldebrid::check_cached(http, token, hashes).await,
             "debridlink" => super::debridlink::check_cached(http, token, hashes).await,
             "debrider" => super::debrider::check_cached(http, token, hashes, None).await,

@@ -370,7 +370,7 @@ pub struct AppConfig {
     // ── HTTP client / egress ──────────────────────────────────────
     /// Provider service IDs that bypass `REQUESTS_PROXY_URL` and connect directly.
     /// Comma-separated or JSON array. Valid IDs: realdebrid, seedr, debridlink, alldebrid,
-    /// offcloud, pikpak, torbox, premiumize, stremthru, torrin, easydebrid, debrider.
+    /// offcloud, pikpak, torbox, premiumize, stremthru, torrin, highway, easydebrid, debrider.
     /// Ignored when `requests_proxy_include_debrid_providers` is non-empty.
     pub requests_proxy_exclude_debrid_providers: Vec<String>,
     /// When non-empty, ONLY these provider IDs are routed through `REQUESTS_PROXY_URL`;
