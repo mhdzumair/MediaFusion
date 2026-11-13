@@ -17,6 +17,7 @@
 
 use serde_json::Value;
 
+use crate::parser::episode_detector::is_video_file;
 use crate::providers::torrents::transport::MediaFlowForward;
 use crate::providers::{ProviderError, file_selection::select_debrid_file_index, response_json};
 
@@ -217,6 +218,9 @@ async fn delete_all_torrents_at(
 
 /// Pick the file to play. `file_index` is the BitTorrent file index, which
 /// HighWay reports per file as `index`; the selector works on list positions.
+/// Unfinished files (`partial`, named `*.part`) take part in the selection under
+/// their final name, so a request for an episode that is still loading answers
+/// "downloading" instead of falling back to another episode.
 fn select_file(
     files: &[Value],
     release_name: &str,
@@ -224,28 +228,34 @@ fn select_file(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Option<usize> {
-    let complete: Vec<&Value> = files
-        .iter()
-        .filter(|f| f.get("partial").and_then(|v| v.as_bool()) != Some(true))
-        .collect();
-    if complete.is_empty() {
-        return None;
-    }
-    let pairs: Vec<(String, i64)> = complete
+) -> Result<usize, ProviderError> {
+    let pairs: Vec<(String, i64)> = files
         .iter()
         .map(|f| {
+            let path = f.get("path").and_then(|v| v.as_str()).unwrap_or_default();
+            let path = if is_partial(f) {
+                path.strip_suffix(".part").unwrap_or(path)
+            } else {
+                path
+            };
             (
-                f.get("path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
+                path.to_string(),
                 f.get("size").and_then(|v| v.as_i64()).unwrap_or(0),
             )
         })
         .collect();
+    // Without a video file the selector falls back to position zero (e.g. an .nfo).
+    if !pairs.iter().any(|(path, _)| {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        is_video_file(name)
+    }) {
+        return Err(ProviderError::api(
+            "No video file in HighWay transfer",
+            "no_video_file_found.mp4",
+        ));
+    }
     let position = file_index.and_then(|wanted| {
-        complete
+        files
             .iter()
             .position(|f| f.get("index").and_then(|v| v.as_i64()) == Some(i64::from(wanted)))
             .and_then(|p| i32::try_from(p).ok())
@@ -259,8 +269,21 @@ fn select_file(
         episode,
         None,
     );
-    let chosen_file = complete.get(chosen)?;
-    files.iter().position(|f| std::ptr::eq(f, *chosen_file))
+    match files.get(chosen) {
+        Some(file) if is_partial(file) => Err(ProviderError::api(
+            "HighWay is still downloading this file. Play again in a few minutes.",
+            "torrent_downloading.mp4",
+        )),
+        Some(_) => Ok(chosen),
+        None => Err(ProviderError::api(
+            "No files in HighWay transfer",
+            "no_video_file_found.mp4",
+        )),
+    }
+}
+
+fn is_partial(file: &Value) -> bool {
+    file.get("partial").and_then(|v| v.as_bool()) == Some(true)
 }
 
 /// Resolve a direct video URL from HighWay for the given torrent.
@@ -350,10 +373,7 @@ async fn get_video_url_at(
         .cloned()
         .unwrap_or_default();
     let release_name = transfer.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let chosen = select_file(&files, release_name, filename, file_index, season, episode)
-        .ok_or_else(|| {
-            ProviderError::api("No files in HighWay transfer", "no_video_file_found.mp4")
-        })?;
+    let chosen = select_file(&files, release_name, filename, file_index, season, episode)?;
 
     files[chosen]
         .get("download_url")
@@ -450,6 +470,91 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(url, "https://dl.example/e01");
+    }
+
+    async fn completed_server(transfer: serde_json::Value) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"id": "11", "service": "torrent", "state": "completed"})),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(query_param("id", "11"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(transfer))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    fn video_file(err: crate::providers::ProviderError) -> &'static str {
+        match err {
+            crate::providers::ProviderError::Api { video_file, .. } => video_file,
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn partial_episode_answers_downloading_instead_of_another_episode() {
+        let server = completed_server(transfer()).await;
+
+        let by_episode = super::get_video_url_at(
+            &http(),
+            &server.uri(),
+            "tok",
+            HASH,
+            &[],
+            None,
+            None,
+            Some(1),
+            Some(3),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(video_file(by_episode), "torrent_downloading.mp4");
+
+        let by_index = super::get_video_url_at(
+            &http(),
+            &server.uri(),
+            "tok",
+            HASH,
+            &[],
+            None,
+            Some(3),
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(video_file(by_index), "torrent_downloading.mp4");
+    }
+
+    #[tokio::test]
+    async fn transfer_without_video_is_rejected() {
+        let server = completed_server(json!({
+            "id": "11", "service": "torrent", "name": "Docs", "state": "completed", "progress": 100,
+            "size": 10, "hash": HASH,
+            "files": [{"id": "a1", "index": 0, "path": "Docs/info.nfo", "size": 10, "partial": false,
+                       "download_url": "https://dl.example/nfo"}]
+        }))
+        .await;
+
+        let err = super::get_video_url_at(
+            &http(),
+            &server.uri(),
+            "tok",
+            HASH,
+            &[],
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(video_file(err), "no_video_file_found.mp4");
     }
 
     #[tokio::test]
